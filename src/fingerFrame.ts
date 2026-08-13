@@ -12,10 +12,59 @@
  */
 
 import * as THREE from "three";
-import { EffectQuad, EdgeQuad, TipDots } from "./effects.js";
+import { EffectQuad, EdgeQuad, TipDots, type EffectKind } from "./effects.js";
+import { PointSmoother } from "./smoothing.js";
 import type { MultiHandResult } from "./handTracker.js";
 
 const FRAME_BLUE = 0x2776ea; // #2776EA
+
+interface HandSmoother {
+  thumb: PointSmoother;
+  index: PointSmoother;
+  middle: PointSmoother;
+  middleDip: PointSmoother;
+}
+
+// Mapping slider 0..100 → minCutoff (Hz), log-scale. Default 50 ≈ 1.55 Hz.
+const MIN_CUTOFF_LOW = 0.3; // s=100 (sangat smooth)
+const MIN_CUTOFF_HIGH = 8.0; // s=0 (hampir raw)
+function minCutoffFromSlider(s: number): number {
+  const t = Math.max(0, Math.min(100, s)) / 100;
+  return Math.exp(Math.log(MIN_CUTOFF_LOW) + (1 - t) * (Math.log(MIN_CUTOFF_HIGH) - Math.log(MIN_CUTOFF_LOW)));
+}
+
+function makeHandSmoother(minCutoff: number): HandSmoother {
+  return {
+    thumb: new PointSmoother(minCutoff),
+    index: new PointSmoother(minCutoff),
+    middle: new PointSmoother(minCutoff),
+    middleDip: new PointSmoother(minCutoff),
+  };
+}
+
+interface SmoothHand {
+  thumbTip: THREE.Vector2;
+  indexTip: THREE.Vector2;
+  middleTip: THREE.Vector2;
+  middleDip: THREE.Vector2;
+}
+
+function smoothHand(
+  h: { thumbTip: { x: number; y: number }; indexTip: { x: number; y: number }; middleTip: { x: number; y: number }; middleDip: { x: number; y: number } },
+  s: HandSmoother,
+  time: number,
+): SmoothHand {
+  const t = s.thumb.filter(h.thumbTip.x, h.thumbTip.y, time);
+  const i = s.index.filter(h.indexTip.x, h.indexTip.y, time);
+  const m = s.middle.filter(h.middleTip.x, h.middleTip.y, time);
+  const d = s.middleDip.filter(h.middleDip.x, h.middleDip.y, time);
+  return {
+    thumbTip: new THREE.Vector2(t.x, t.y),
+    indexTip: new THREE.Vector2(i.x, i.y),
+    middleTip: new THREE.Vector2(m.x, m.y),
+    middleDip: new THREE.Vector2(d.x, d.y),
+  };
+}
 
 export class FingerFrameCompositor {
   readonly pixQuad: EffectQuad;   // corner1 → pixelate
@@ -29,6 +78,11 @@ export class FingerFrameCompositor {
   private visible = false;
   private showThumbIndex = true;  // frame1: thumb↔index (pixelate)
   private showIndexMiddle = true; // frame2: index↔middle (Sobel-X)
+  private effect1: EffectKind = "pixelate"; // efek frame1 (thumb↔index)
+  private effect2: EffectKind = "sobel-x";  // efek frame2 (index↔middle)
+  private smoother1: HandSmoother;
+  private smoother2: HandSmoother;
+  private smoothingValue = 50;
 
   constructor(
     scene: THREE.Scene,
@@ -73,6 +127,10 @@ export class FingerFrameCompositor {
     this.indexDots = new TipDots(scene, { count: 2, color: FRAME_BLUE, sizePx: 18, renderOrder: 30 });
     this.middleDots = new TipDots(scene, { count: 2, color: FRAME_BLUE, sizePx: 18, renderOrder: 30 });
 
+    const cutoff = minCutoffFromSlider(this.smoothingValue);
+    this.smoother1 = makeHandSmoother(cutoff);
+    this.smoother2 = makeHandSmoother(cutoff);
+
     this.setVisible(false);
   }
 
@@ -92,6 +150,45 @@ export class FingerFrameCompositor {
     this.showIndexMiddle = state.indexMiddle;
   }
 
+  /** Pilih efek untuk tiap frame (thumb↔index / index↔middle). */
+  setEffects(state: { thumbIndex: EffectKind; indexMiddle: EffectKind }): void {
+    this.effect1 = state.thumbIndex;
+    this.effect2 = state.indexMiddle;
+    this.pixQuad.setEffect(this.effect1);
+    this.sobelQuad.setEffect(this.effect2);
+  }
+
+  /** Set teks untuk effect "text" (dipakai saat efek frame = "text"). */
+  setText(text: string): void {
+    this.pixQuad.setText(text);
+    this.sobelQuad.setText(text);
+  }
+
+  /** Set kekuatan smoothing (0..100). 0 = raw, 100 = paling smooth. */
+  setSmoothing(value: number): void {
+    this.smoothingValue = Math.max(0, Math.min(100, value));
+    const c = minCutoffFromSlider(this.smoothingValue);
+    const set = (s: HandSmoother) => {
+      s.thumb.setMinCutoff(c);
+      s.index.setMinCutoff(c);
+      s.middle.setMinCutoff(c);
+      s.middleDip.setMinCutoff(c);
+    };
+    set(this.smoother1);
+    set(this.smoother2);
+  }
+
+  private resetSmoothers(): void {
+    const reset = (s: HandSmoother) => {
+      s.thumb.reset();
+      s.index.reset();
+      s.middle.reset();
+      s.middleDip.reset();
+    };
+    reset(this.smoother1);
+    reset(this.smoother2);
+  }
+
   setVisible(show: boolean): void {
     this.visible = show;
     if (!show) {
@@ -102,13 +199,15 @@ export class FingerFrameCompositor {
   /**
    * Render 2 hand-frame windows. `aspect` = canvas width/height untuk
    * mapping normalized landmark → world coords (ortho bounds ±aspect × ±1).
+   * `timeSeconds` untuk dt One Euro filter.
    */
-  render(hand: MultiHandResult, aspect: number): void {
+  render(hand: MultiHandResult, aspect: number, timeSeconds: number): void {
     if (!this.visible) {
       this.hideAll();
       return;
     }
     if (hand.numDetected < 2) {
+      this.resetSmoothers();
       this.hideAll();
       return;
     }
@@ -128,21 +227,30 @@ export class FingerFrameCompositor {
       return new THREE.Vector2(mx, 1.0 - my);
     };
 
-    const h1 = hand.hands[0];
-    const h2 = hand.hands[1];
+    let [h1, h2] = [hand.hands[0], hand.hands[1]];
+    // Di raw camera, tangan kiri user ada di sisi KANAN gambar (x mentah lebih besar).
+    // Sort supaya h1 = kiri (x besar), h2 = kanan (x kecil) → BL selalu di kiri layar
+    // → teks tidak terbalik, apapun urutan tangan masuk kamera.
+    if (h1.palmCenter.x < h2.palmCenter.x) {
+      [h1, h2] = [h2, h1];
+    }
+
+    // Smoothing (One Euro) — hilangkan jitter, diterapkan setelah sort.
+    const sh1 = smoothHand(h1, this.smoother1, timeSeconds);
+    const sh2 = smoothHand(h2, this.smoother2, timeSeconds);
 
     // ──────── corner1 = thumb-index frame ────────
     if (this.showThumbIndex) {
-      const c1BL = v(h1.thumbTip.x, h1.thumbTip.y);
-      const c1BR = v(h2.thumbTip.x, h2.thumbTip.y);
-      const c1TL = v(h1.indexTip.x, h1.indexTip.y);
-      const c1TR = v(h2.indexTip.x, h2.indexTip.y);
+      const c1BL = v(sh1.thumbTip.x, sh1.thumbTip.y);
+      const c1BR = v(sh2.thumbTip.x, sh2.thumbTip.y);
+      const c1TL = v(sh1.indexTip.x, sh1.indexTip.y);
+      const c1TR = v(sh2.indexTip.x, sh2.indexTip.y);
       this.pixQuad.setCorners(c1BL, c1BR, c1TR, c1TL);
       this.pixQuad.setUvCorners(
-        uvOf(h1.thumbTip.x, h1.thumbTip.y),
-        uvOf(h2.thumbTip.x, h2.thumbTip.y),
-        uvOf(h2.indexTip.x, h2.indexTip.y),
-        uvOf(h1.indexTip.x, h1.indexTip.y),
+        uvOf(sh1.thumbTip.x, sh1.thumbTip.y),
+        uvOf(sh2.thumbTip.x, sh2.thumbTip.y),
+        uvOf(sh2.indexTip.x, sh2.indexTip.y),
+        uvOf(sh1.indexTip.x, sh1.indexTip.y),
       );
       this.edge1.setCorners(c1BL, c1BR, c1TR, c1TL);
       this.pixQuad.setVisible(true);
@@ -154,16 +262,16 @@ export class FingerFrameCompositor {
 
     // ──────── corner2 = index-middle frame (TD TYPO preserved) ────────
     if (this.showIndexMiddle) {
-      const c2BL = v(h1.indexTip.x, h1.indexTip.y);
-      const c2BR = v(h2.indexTip.x, h2.indexTip.y);
-      const c2TL = v(h1.middleDip.x, h1.middleTip.y); // ← typo (TD original), tetap dipertahankan
-      const c2TR = v(h2.middleTip.x, h2.middleTip.y);
+      const c2BL = v(sh1.indexTip.x, sh1.indexTip.y);
+      const c2BR = v(sh2.indexTip.x, sh2.indexTip.y);
+      const c2TL = v(sh1.middleDip.x, sh1.middleTip.y); // ← typo (TD original), tetap dipertahankan
+      const c2TR = v(sh2.middleTip.x, sh2.middleTip.y);
       this.sobelQuad.setCorners(c2BL, c2BR, c2TR, c2TL);
       this.sobelQuad.setUvCorners(
-        uvOf(h1.indexTip.x, h1.indexTip.y),
-        uvOf(h2.indexTip.x, h2.indexTip.y),
-        uvOf(h2.middleTip.x, h2.middleTip.y),
-        uvOf(h1.middleDip.x, h1.middleTip.y), // ← typo dipertahankan biar konsisten dg posisi
+        uvOf(sh1.indexTip.x, sh1.indexTip.y),
+        uvOf(sh2.indexTip.x, sh2.indexTip.y),
+        uvOf(sh2.middleTip.x, sh2.middleTip.y),
+        uvOf(sh1.middleDip.x, sh1.middleTip.y), // ← typo dipertahankan biar konsisten dg posisi
       );
       this.edge2.setCorners(c2BL, c2BR, c2TR, c2TL);
       this.sobelQuad.setVisible(true);
@@ -175,20 +283,20 @@ export class FingerFrameCompositor {
 
     // ──────── Marker ujung jari (per group, ikut state frame) ────────
     this.thumbDots.setPositions([
-      v(h1.thumbTip.x, h1.thumbTip.y),
-      v(h2.thumbTip.x, h2.thumbTip.y),
+      v(sh1.thumbTip.x, sh1.thumbTip.y),
+      v(sh2.thumbTip.x, sh2.thumbTip.y),
     ]);
     this.thumbDots.setVisible(this.showThumbIndex);
 
     this.indexDots.setPositions([
-      v(h1.indexTip.x, h1.indexTip.y),
-      v(h2.indexTip.x, h2.indexTip.y),
+      v(sh1.indexTip.x, sh1.indexTip.y),
+      v(sh2.indexTip.x, sh2.indexTip.y),
     ]);
     this.indexDots.setVisible(this.showThumbIndex || this.showIndexMiddle);
 
     this.middleDots.setPositions([
-      v(h1.middleTip.x, h1.middleTip.y),
-      v(h2.middleTip.x, h2.middleTip.y),
+      v(sh1.middleTip.x, sh1.middleTip.y),
+      v(sh2.middleTip.x, sh2.middleTip.y),
     ]);
     this.middleDots.setVisible(this.showIndexMiddle);
   }

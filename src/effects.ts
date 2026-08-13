@@ -20,6 +20,7 @@ import * as THREE from "three";
 // ──────────────────────────────────────────────────────────────────────
 const CORNER_VERTEX_SHADER = /* glsl */ `
   varying vec2 vSampleUv;
+  varying vec2 vUv;
 
   // World-space corners (posisi quad di layar, ikut jari)
   uniform vec2 uCornerBL;
@@ -48,6 +49,7 @@ const CORNER_VERTEX_SHADER = /* glsl */ `
       + (1.0 - uv.x) *        uv.y  * uUvTL
       +        uv.x  *        uv.y  * uUvTR;
 
+    vUv = uv;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(dst, 0.0, 1.0);
   }
 `;
@@ -108,6 +110,178 @@ const SOBELX_FRAG = /* glsl */ `
   }
 `;
 
+// ──────────────────────────────────────────────────────────────────────
+// Additional effect fragment shaders (sample vSampleUv = webcam crop)
+// ──────────────────────────────────────────────────────────────────────
+
+// Helper snippet: mirror-aware sample (duplicated per shader untuk kemudahan)
+// uMirror=0.0 (raw) untuk semua effect quad sekarang.
+
+const INVERT_FRAG = /* glsl */ `
+  precision highp float;
+  varying vec2 vSampleUv;
+  uniform sampler2D uTex;
+
+  void main() {
+    vec3 c = texture2D(uTex, vSampleUv).rgb;
+    gl_FragColor = vec4(1.0 - c, 1.0);
+  }
+`;
+
+const GRAYSCALE_FRAG = /* glsl */ `
+  precision highp float;
+  varying vec2 vSampleUv;
+  uniform sampler2D uTex;
+
+  void main() {
+    vec3 c = texture2D(uTex, vSampleUv).rgb;
+    float l = dot(c, vec3(0.299, 0.587, 0.114));
+    gl_FragColor = vec4(vec3(l), 1.0);
+  }
+`;
+
+const BLUR_FRAG = /* glsl */ `
+  precision highp float;
+  varying vec2 vSampleUv;
+  uniform sampler2D uTex;
+  uniform vec2 uTexSize;
+
+  void main() {
+    vec2 px = 1.0 / uTexSize;
+    vec3 sum = vec3(0.0);
+    sum += texture2D(uTex, vSampleUv + vec2(-px.x,  px.y)).rgb;
+    sum += texture2D(uTex, vSampleUv + vec2(   0.0, px.y)).rgb;
+    sum += texture2D(uTex, vSampleUv + vec2( px.x,  px.y)).rgb;
+    sum += texture2D(uTex, vSampleUv + vec2(-px.x,   0.0)).rgb;
+    sum += texture2D(uTex, vSampleUv).rgb;
+    sum += texture2D(uTex, vSampleUv + vec2( px.x,   0.0)).rgb;
+    sum += texture2D(uTex, vSampleUv + vec2(-px.x, -px.y)).rgb;
+    sum += texture2D(uTex, vSampleUv + vec2(   0.0,-px.y)).rgb;
+    sum += texture2D(uTex, vSampleUv + vec2( px.x, -px.y)).rgb;
+    gl_FragColor = vec4(sum / 9.0, 1.0);
+  }
+`;
+
+const EMBOSS_FRAG = /* glsl */ `
+  precision highp float;
+  varying vec2 vSampleUv;
+  uniform sampler2D uTex;
+  uniform vec2 uTexSize;
+
+  void main() {
+    vec2 px = 1.0 / uTexSize;
+    float tl = texture2D(uTex, vSampleUv + vec2(-px.x,  px.y)).r;
+    float t  = texture2D(uTex, vSampleUv + vec2(   0.0, px.y)).r;
+    float tr = texture2D(uTex, vSampleUv + vec2( px.x,  px.y)).r;
+    float l  = texture2D(uTex, vSampleUv + vec2(-px.x,   0.0)).r;
+    float r  = texture2D(uTex, vSampleUv + vec2( px.x,   0.0)).r;
+    float bl = texture2D(uTex, vSampleUv + vec2(-px.x, -px.y)).r;
+    float b  = texture2D(uTex, vSampleUv + vec2(   0.0,-px.y)).r;
+    float br = texture2D(uTex, vSampleUv + vec2( px.x, -px.y)).r;
+
+    // Emboss: -tl -t -tr -l + 4*r -bl -b -br (highlight arah kanan-bawah)
+    float e = -tl - t - tr - l + 4.0 * r - bl - b - br;
+    float g = clamp(e + 0.5, 0.0, 1.0);
+    gl_FragColor = vec4(vec3(g), 1.0);
+  }
+`;
+
+const POSTERIZE_FRAG = /* glsl */ `
+  precision highp float;
+  varying vec2 vSampleUv;
+  uniform sampler2D uTex;
+
+  void main() {
+    vec3 c = texture2D(uTex, vSampleUv).rgb;
+    float levels = 8.0;
+    vec3 q = floor(c * levels) / (levels - 1.0);
+    gl_FragColor = vec4(q, 1.0);
+  }
+`;
+
+const THRESHOLD_FRAG = /* glsl */ `
+  precision highp float;
+  varying vec2 vSampleUv;
+  uniform sampler2D uTex;
+
+  void main() {
+    vec3 c = texture2D(uTex, vSampleUv).rgb;
+    float l = dot(c, vec3(0.299, 0.587, 0.114));
+    float t = step(0.5, l);
+    gl_FragColor = vec4(vec3(t), 1.0);
+  }
+`;
+
+const SEPIA_FRAG = /* glsl */ `
+  precision highp float;
+  varying vec2 vSampleUv;
+  uniform sampler2D uTex;
+
+  void main() {
+    vec3 c = texture2D(uTex, vSampleUv).rgb;
+    mat3 m = mat3(
+      0.393, 0.769, 0.189,
+      0.349, 0.686, 0.168,
+      0.272, 0.534, 0.131
+    );
+    gl_FragColor = vec4(m * c, 1.0);
+  }
+`;
+
+const SHARPEN_FRAG = /* glsl */ `
+  precision highp float;
+  varying vec2 vSampleUv;
+  uniform sampler2D uTex;
+  uniform vec2 uTexSize;
+
+  void main() {
+    vec2 px = 1.0 / uTexSize;
+    vec3 c = texture2D(uTex, vSampleUv).rgb;
+    vec3 sum = -4.0 * c;
+    sum += texture2D(uTex, vSampleUv + vec2(-px.x,   0.0)).rgb;
+    sum += texture2D(uTex, vSampleUv + vec2( px.x,   0.0)).rgb;
+    sum += texture2D(uTex, vSampleUv + vec2(   0.0,  px.y)).rgb;
+    sum += texture2D(uTex, vSampleUv + vec2(   0.0, -px.y)).rgb;
+    // center weight 5x: sharpen = -4*c + 5*c = c → gunakan kernel 0 -1 0 / -1 5 -1 / 0 -1 0
+    vec3 sharp = 5.0 * c
+      - texture2D(uTex, vSampleUv + vec2(-px.x,   0.0)).rgb
+      - texture2D(uTex, vSampleUv + vec2( px.x,   0.0)).rgb
+      - texture2D(uTex, vSampleUv + vec2(   0.0,  px.y)).rgb
+      - texture2D(uTex, vSampleUv + vec2(   0.0, -px.y)).rgb;
+    gl_FragColor = vec4(clamp(sharp, 0.0, 1.0), 1.0);
+  }
+`;
+
+// "Bendera" effect: overlay merah (atas) / putih (bawah) semi-transparan
+// di atas webcam crop — bendera Indonesia, transparan (tidak solid).
+const BENDERA_FRAG = /* glsl */ `
+  precision highp float;
+  varying vec2 vSampleUv;
+  varying vec2 vUv;
+  uniform sampler2D uTex;
+
+  void main() {
+    vec3 c = texture2D(uTex, vSampleUv).rgb;
+    vec3 flag = vUv.y > 0.5 ? vec3(1.0, 0.0, 0.0) : vec3(1.0, 1.0, 1.0);
+    float alpha = 0.5; // transparan, tidak solid
+    gl_FragColor = vec4(mix(c, flag, alpha), 1.0);
+  }
+`;
+
+// "Text" effect: TIDAK sample webcam. Sample teks texture via vUv (plain
+// unit UV) → di dalam frame transparan (webcam tembus), hanya teks + edge.
+const TEXT_FRAG = /* glsl */ `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uTextTex;
+  uniform vec3 uTextColor;
+
+  void main() {
+    float a = texture2D(uTextTex, vUv).a;
+    gl_FragColor = vec4(uTextColor, a);
+  }
+`;
+
 // Edge outline tetap pakai UV unit-square lokal (posisi border quad itu
 // sendiri), jadi TIDAK perlu diubah — biarkan pakai vUv dari uv plane.
 const EDGE_VERTEX_SHADER = /* glsl */ `
@@ -154,7 +328,45 @@ const EDGE_FRAG = /* glsl */ `
 // EffectQuad
 // ──────────────────────────────────────────────────────────────────────
 
-export type EffectKind = "pixelate" | "sobel-x";
+export type EffectKind =
+  | "pixelate" | "sobel-x" | "invert" | "grayscale" | "blur"
+  | "emboss" | "posterize" | "threshold" | "sepia" | "sharpen" | "text"
+  | "bendera";
+
+export interface EffectDef {
+  id: EffectKind;
+  label: string;
+}
+
+export const EFFECTS: EffectDef[] = [
+  { id: "pixelate", label: "Pixelate" },
+  { id: "sobel-x", label: "Sobel-X" },
+  { id: "invert", label: "Invert" },
+  { id: "grayscale", label: "Grayscale" },
+  { id: "blur", label: "Blur" },
+  { id: "emboss", label: "Emboss" },
+  { id: "posterize", label: "Posterize" },
+  { id: "threshold", label: "Threshold" },
+  { id: "sepia", label: "Sepia" },
+  { id: "sharpen", label: "Sharpen" },
+  { id: "text", label: "Text" },
+  { id: "bendera", label: "Bendera" },
+];
+
+const EFFECT_FRAG: Record<EffectKind, string> = {
+  "pixelate": PIXELATE_FRAG,
+  "sobel-x": SOBELX_FRAG,
+  "invert": INVERT_FRAG,
+  "grayscale": GRAYSCALE_FRAG,
+  "blur": BLUR_FRAG,
+  "emboss": EMBOSS_FRAG,
+  "posterize": POSTERIZE_FRAG,
+  "threshold": THRESHOLD_FRAG,
+  "sepia": SEPIA_FRAG,
+  "sharpen": SHARPEN_FRAG,
+  "text": TEXT_FRAG,
+  "bendera": BENDERA_FRAG,
+};
 
 export interface EffectQuadOptions {
   sourceTexture: THREE.Texture;
@@ -167,7 +379,7 @@ export interface EffectQuadOptions {
 
 export class EffectQuad {
   readonly mesh: THREE.Mesh;
-  readonly material: THREE.ShaderMaterial;
+  material: THREE.ShaderMaterial;
 
   private uCornerBL: { value: THREE.Vector2 };
   private uCornerBR: { value: THREE.Vector2 };
@@ -182,6 +394,9 @@ export class EffectQuad {
   private uBlockV: { value: number };
   private uTex: { value: THREE.Texture };
   private uMirror: { value: number };
+  private uTextTex: { value: THREE.Texture };
+  private uTextColor: { value: THREE.Color };
+  private currentEffect: EffectKind;
   private visible = true;
 
   constructor(opts: EffectQuadOptions) {
@@ -199,12 +414,22 @@ export class EffectQuad {
     this.uBlockV = { value: opts.blockV ?? 27 };
     this.uTex = { value: opts.sourceTexture };
     this.uMirror = { value: 0.0 };
+    this.uTextTex = { value: makeTextTexture("") };
+    this.uTextColor = { value: new THREE.Color(0xffffff) };
+    this.currentEffect = opts.effect;
 
-    const frag = opts.effect === "pixelate" ? PIXELATE_FRAG : SOBELX_FRAG;
+    this.material = this.buildMaterial(opts.effect);
 
-    this.material = new THREE.ShaderMaterial({
+    const geom = new THREE.PlaneGeometry(2, 2, 32, 32);
+    this.mesh = new THREE.Mesh(geom, this.material);
+    this.mesh.renderOrder = opts.renderOrder ?? 10;
+    this.mesh.frustumCulled = false;
+  }
+
+  private buildMaterial(effect: EffectKind): THREE.ShaderMaterial {
+    return new THREE.ShaderMaterial({
       vertexShader: CORNER_VERTEX_SHADER,
-      fragmentShader: frag,
+      fragmentShader: EFFECT_FRAG[effect],
       uniforms: {
         uCornerBL: this.uCornerBL,
         uCornerBR: this.uCornerBR,
@@ -219,17 +444,35 @@ export class EffectQuad {
         uBlockV: this.uBlockV,
         uTex: this.uTex,
         uMirror: this.uMirror,
+        uTextTex: this.uTextTex,
+        uTextColor: this.uTextColor,
       },
-      transparent: false,
+      transparent: effect === "text",
       depthTest: false,
       depthWrite: false,
       side: THREE.DoubleSide,
     });
+  }
 
-    const geom = new THREE.PlaneGeometry(2, 2, 32, 32);
-    this.mesh = new THREE.Mesh(geom, this.material);
-    this.mesh.renderOrder = opts.renderOrder ?? 10;
-    this.mesh.frustumCulled = false;
+  /** Ganti efek saat runtime (rebuild fragment shader + transparent flag). */
+  setEffect(effect: EffectKind): void {
+    if (effect === this.currentEffect) return;
+    this.currentEffect = effect;
+    this.material.dispose();
+    this.material = this.buildMaterial(effect);
+    this.mesh.material = this.material;
+  }
+
+  /** Set teks untuk effect "text" (regenerate CanvasTexture). */
+  setText(text: string): void {
+    const old = this.uTextTex.value;
+    this.uTextTex.value = makeTextTexture(text);
+    if (old && old.dispose) old.dispose();
+  }
+
+  /** Set warna teks (hex). */
+  setTextColor(hex: number): void {
+    this.uTextColor.value.setHex(hex);
   }
 
   /** Posisi quad di layar (world coords), ikut jari. */
@@ -273,6 +516,7 @@ export class EffectQuad {
   dispose(): void {
     this.mesh.geometry.dispose();
     this.material.dispose();
+    if (this.uTextTex.value && this.uTextTex.value.dispose) this.uTextTex.value.dispose();
   }
 }
 
@@ -457,6 +701,39 @@ function makeCircleSprite(size: number): THREE.CanvasTexture {
   grad.addColorStop(1, "rgba(255,255,255,0)");
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, size, size);
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/**
+ * Buat texture teks (putih, latar transparan) via Canvas2D. Teks auto-fit
+ * lebar canvas (shrink font). Dipakai oleh effect "text" sebagai alpha mask
+ * (warna final di-tint oleh uTextColor).
+ */
+function makeTextTexture(text: string): THREE.CanvasTexture {
+  const size = 512;
+  const cv = document.createElement("canvas");
+  cv.width = size;
+  cv.height = size;
+  const ctx = cv.getContext("2d")!;
+  ctx.clearRect(0, 0, size, size);
+
+  if (text && text.length > 0) {
+    let fontSize = 160;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `bold ${fontSize}px system-ui, -apple-system, sans-serif`;
+    while (ctx.measureText(text).width > size * 0.9 && fontSize > 16) {
+      fontSize -= 8;
+      ctx.font = `bold ${fontSize}px system-ui, -apple-system, sans-serif`;
+    }
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(text, size / 2, size / 2);
+  }
 
   const tex = new THREE.CanvasTexture(cv);
   tex.minFilter = THREE.LinearFilter;

@@ -16,6 +16,7 @@ import * as THREE from "three";
 import { WarpQuad } from "./warpQuad.js";
 import { Anchored3D } from "./anchored3D.js";
 import { FingerFrameCompositor } from "./fingerFrame.js";
+import type { EffectKind } from "./effects.js";
 import type { MultiHandResult, Pt2 } from "./handTracker.js";
 
 export type RenderMode = "2d" | "3d" | "hybrid" | "frame";
@@ -181,6 +182,21 @@ export class Compositor {
     this.fingerFrame.setFrames(state);
   }
 
+  /** Passthrough: pilih efek tiap frame. */
+  setEffects(state: { thumbIndex: EffectKind; indexMiddle: EffectKind }): void {
+    this.fingerFrame.setEffects(state);
+  }
+
+  /** Passthrough: set teks untuk effect "text". */
+  setText(text: string): void {
+    this.fingerFrame.setText(text);
+  }
+
+  /** Passthrough: set kekuatan smoothing (0..100). */
+  setSmoothing(value: number): void {
+    this.fingerFrame.setSmoothing(value);
+  }
+
   resize(width: number, height: number): void {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.renderer.setPixelRatio(dpr);
@@ -208,7 +224,7 @@ export class Compositor {
     };
 
     if (this.mode === "frame") {
-      this.fingerFrame.render(hand, this.aspect);
+      this.fingerFrame.render(hand, this.aspect, timeSeconds);
     } else {
       this.renderLegacyMode(hand, v, timeSeconds);
     }
