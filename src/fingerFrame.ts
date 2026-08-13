@@ -22,9 +22,13 @@ export class FingerFrameCompositor {
   readonly sobelQuad: EffectQuad; // corner2 → Sobel-X
   readonly edge1: EdgeQuad;       // outline corner1 (biru transparan)
   readonly edge2: EdgeQuad;       // outline corner2 (biru transparan)
-  readonly dots: TipDots;         // marker tiap ujung jari
+  readonly thumbDots: TipDots;    // marker thumb (2 tangan)
+  readonly indexDots: TipDots;    // marker index (2 tangan)
+  readonly middleDots: TipDots;   // marker middle (2 tangan)
 
   private visible = false;
+  private showThumbIndex = true;  // frame1: thumb↔index (pixelate)
+  private showIndexMiddle = true; // frame2: index↔middle (Sobel-X)
 
   constructor(
     scene: THREE.Scene,
@@ -65,12 +69,9 @@ export class FingerFrameCompositor {
     });
     scene.add(this.edge2.mesh);
 
-    this.dots = new TipDots(scene, {
-      count: 6,
-      color: FRAME_BLUE,
-      sizePx: 18,
-      renderOrder: 30,
-    });
+    this.thumbDots = new TipDots(scene, { count: 2, color: FRAME_BLUE, sizePx: 18, renderOrder: 30 });
+    this.indexDots = new TipDots(scene, { count: 2, color: FRAME_BLUE, sizePx: 18, renderOrder: 30 });
+    this.middleDots = new TipDots(scene, { count: 2, color: FRAME_BLUE, sizePx: 18, renderOrder: 30 });
 
     this.setVisible(false);
   }
@@ -83,6 +84,12 @@ export class FingerFrameCompositor {
   setMirror(_mirror: boolean): void {
     // Effect quad sengaja TIDAK mirror (raw), terlepas dari state mirror BG.
     // Method dipertahankan untuk kompatibilitas API.
+  }
+
+  /** State frame: nyalakan/matikan thumb↔index dan index↔middle secara independen. */
+  setFrames(state: { thumbIndex: boolean; indexMiddle: boolean }): void {
+    this.showThumbIndex = state.thumbIndex;
+    this.showIndexMiddle = state.indexMiddle;
   }
 
   setVisible(show: boolean): void {
@@ -125,47 +132,65 @@ export class FingerFrameCompositor {
     const h2 = hand.hands[1];
 
     // ──────── corner1 = thumb-index frame ────────
-    const c1BL = v(h1.thumbTip.x, h1.thumbTip.y);
-    const c1BR = v(h2.thumbTip.x, h2.thumbTip.y);
-    const c1TL = v(h1.indexTip.x, h1.indexTip.y);
-    const c1TR = v(h2.indexTip.x, h2.indexTip.y);
-    this.pixQuad.setCorners(c1BL, c1BR, c1TR, c1TL);
-    this.pixQuad.setUvCorners(
-      uvOf(h1.thumbTip.x, h1.thumbTip.y),
-      uvOf(h2.thumbTip.x, h2.thumbTip.y),
-      uvOf(h2.indexTip.x, h2.indexTip.y),
-      uvOf(h1.indexTip.x, h1.indexTip.y),
-    );
-    this.edge1.setCorners(c1BL, c1BR, c1TR, c1TL);
-    this.pixQuad.setVisible(true);
-    this.edge1.setVisible(true);
+    if (this.showThumbIndex) {
+      const c1BL = v(h1.thumbTip.x, h1.thumbTip.y);
+      const c1BR = v(h2.thumbTip.x, h2.thumbTip.y);
+      const c1TL = v(h1.indexTip.x, h1.indexTip.y);
+      const c1TR = v(h2.indexTip.x, h2.indexTip.y);
+      this.pixQuad.setCorners(c1BL, c1BR, c1TR, c1TL);
+      this.pixQuad.setUvCorners(
+        uvOf(h1.thumbTip.x, h1.thumbTip.y),
+        uvOf(h2.thumbTip.x, h2.thumbTip.y),
+        uvOf(h2.indexTip.x, h2.indexTip.y),
+        uvOf(h1.indexTip.x, h1.indexTip.y),
+      );
+      this.edge1.setCorners(c1BL, c1BR, c1TR, c1TL);
+      this.pixQuad.setVisible(true);
+      this.edge1.setVisible(true);
+    } else {
+      this.pixQuad.setVisible(false);
+      this.edge1.setVisible(false);
+    }
 
     // ──────── corner2 = index-middle frame (TD TYPO preserved) ────────
-    const c2BL = v(h1.indexTip.x, h1.indexTip.y);
-    const c2BR = v(h2.indexTip.x, h2.indexTip.y);
-    const c2TL = v(h1.middleDip.x, h1.middleTip.y); // ← typo (TD original), tetap dipertahankan
-    const c2TR = v(h2.middleTip.x, h2.middleTip.y);
-    this.sobelQuad.setCorners(c2BL, c2BR, c2TR, c2TL);
-    this.sobelQuad.setUvCorners(
-      uvOf(h1.indexTip.x, h1.indexTip.y),
-      uvOf(h2.indexTip.x, h2.indexTip.y),
-      uvOf(h2.middleTip.x, h2.middleTip.y),
-      uvOf(h1.middleDip.x, h1.middleTip.y), // ← typo dipertahankan biar konsisten dg posisi
-    );
-    this.edge2.setCorners(c2BL, c2BR, c2TR, c2TL);
-    this.sobelQuad.setVisible(true);
-    this.edge2.setVisible(true);
+    if (this.showIndexMiddle) {
+      const c2BL = v(h1.indexTip.x, h1.indexTip.y);
+      const c2BR = v(h2.indexTip.x, h2.indexTip.y);
+      const c2TL = v(h1.middleDip.x, h1.middleTip.y); // ← typo (TD original), tetap dipertahankan
+      const c2TR = v(h2.middleTip.x, h2.middleTip.y);
+      this.sobelQuad.setCorners(c2BL, c2BR, c2TR, c2TL);
+      this.sobelQuad.setUvCorners(
+        uvOf(h1.indexTip.x, h1.indexTip.y),
+        uvOf(h2.indexTip.x, h2.indexTip.y),
+        uvOf(h2.middleTip.x, h2.middleTip.y),
+        uvOf(h1.middleDip.x, h1.middleTip.y), // ← typo dipertahankan biar konsisten dg posisi
+      );
+      this.edge2.setCorners(c2BL, c2BR, c2TR, c2TL);
+      this.sobelQuad.setVisible(true);
+      this.edge2.setVisible(true);
+    } else {
+      this.sobelQuad.setVisible(false);
+      this.edge2.setVisible(false);
+    }
 
-    // ──────── Marker di tiap ujung jari (thumb/index/middle × 2 tangan) ────────
-    this.dots.setPositions([
+    // ──────── Marker ujung jari (per group, ikut state frame) ────────
+    this.thumbDots.setPositions([
       v(h1.thumbTip.x, h1.thumbTip.y),
-      v(h1.indexTip.x, h1.indexTip.y),
-      v(h1.middleTip.x, h1.middleTip.y),
       v(h2.thumbTip.x, h2.thumbTip.y),
+    ]);
+    this.thumbDots.setVisible(this.showThumbIndex);
+
+    this.indexDots.setPositions([
+      v(h1.indexTip.x, h1.indexTip.y),
       v(h2.indexTip.x, h2.indexTip.y),
+    ]);
+    this.indexDots.setVisible(this.showThumbIndex || this.showIndexMiddle);
+
+    this.middleDots.setPositions([
+      v(h1.middleTip.x, h1.middleTip.y),
       v(h2.middleTip.x, h2.middleTip.y),
     ]);
-    this.dots.setVisible(true);
+    this.middleDots.setVisible(this.showIndexMiddle);
   }
 
   dispose(): void {
@@ -173,7 +198,9 @@ export class FingerFrameCompositor {
     this.edge1.dispose();
     this.sobelQuad.dispose();
     this.edge2.dispose();
-    this.dots.dispose();
+    this.thumbDots.dispose();
+    this.indexDots.dispose();
+    this.middleDots.dispose();
   }
 
   private hideAll(): void {
@@ -181,6 +208,8 @@ export class FingerFrameCompositor {
     this.edge1.setVisible(false);
     this.sobelQuad.setVisible(false);
     this.edge2.setVisible(false);
-    this.dots.setVisible(false);
+    this.thumbDots.setVisible(false);
+    this.indexDots.setVisible(false);
+    this.middleDots.setVisible(false);
   }
 }

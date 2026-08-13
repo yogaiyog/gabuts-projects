@@ -176,6 +176,11 @@ export class Compositor {
     (this.bgMaterial.uniforms.uMirror as { value: number }).value = enabled ? 1.0 : 0.0;
   }
 
+  /** Passthrough: nyalakan/matikan tiap frame (thumb↔index / index↔middle). */
+  setFrames(state: { thumbIndex: boolean; indexMiddle: boolean }): void {
+    this.fingerFrame.setFrames(state);
+  }
+
   resize(width: number, height: number): void {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.renderer.setPixelRatio(dpr);

@@ -18,7 +18,7 @@ import { Camera } from "./camera.js";
 import { HandTracker } from "./handTracker.js";
 import { Compositor } from "./compositor.js";
 import { generateARPatternTexture } from "./arPattern.js";
-import { buildUI, setStatus, showModes, hideStart, type UIMode } from "./ui.js";
+import { buildUI, setStatus, showModes, hideStart, setFramesVisible, type UIMode, type FrameState } from "./ui.js";
 import type { MultiHandResult } from "./handTracker.js";
 
 const DEFAULT_MODE: UIMode = "frame";
@@ -40,12 +40,18 @@ async function bootstrap() {
 
   // 3. UI
   let currentMode: UIMode = DEFAULT_MODE;
+  let frameState: FrameState = { thumbIndex: true, indexMiddle: true };
   const ui = buildUI({
     parent: overlay,
     onModeChange: (mode: UIMode) => {
       currentMode = mode;
       compositor.setMode(mode);
+      setFramesVisible(ui, mode === "frame");
       updateModeStatus();
+    },
+    onFramesChange: (state: FrameState) => {
+      frameState = state;
+      compositor.setFrames(state);
     },
     onStart: () => {
       void startCamera();
@@ -53,6 +59,8 @@ async function bootstrap() {
   });
 
   compositor.setMode(DEFAULT_MODE);
+  compositor.setFrames(frameState);
+  setFramesVisible(ui, DEFAULT_MODE === "frame");
 
   function updateModeStatus(): void {
     if (!tracker) return;
