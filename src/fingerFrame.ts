@@ -164,6 +164,12 @@ export class FingerFrameCompositor {
     this.sobelQuad.setText(text);
   }
 
+  /** Set gambar untuk effect "image". */
+  setImage(texture: THREE.Texture): void {
+    this.pixQuad.setImage(texture);
+    this.sobelQuad.setImage(texture);
+  }
+
   /** Set kekuatan smoothing (0..100). 0 = raw, 100 = paling smooth. */
   setSmoothing(value: number): void {
     this.smoothingValue = Math.max(0, Math.min(100, value));

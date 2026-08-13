@@ -192,6 +192,39 @@ export class Compositor {
     this.fingerFrame.setText(text);
   }
 
+  /** Passthrough: set gambar untuk effect "image". */
+  setImage(texture: THREE.Texture): void {
+    this.fingerFrame.setImage(texture);
+  }
+
+  /** Load gambar dari URL (TextureLoader) → set sebagai gambar effect "image". */
+  loadImageFromUrl(url: string): void {
+    const loader = new THREE.TextureLoader();
+    loader.load(url, (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.minFilter = THREE.LinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      this.setImage(tex);
+    });
+  }
+
+  /** Upload gambar dari file lokal (client-side) → set sebagai gambar effect "image". */
+  setImageFromFile(file: File): void {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const tex = new THREE.Texture(img);
+      tex.needsUpdate = true;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.minFilter = THREE.LinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      this.setImage(tex);
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => URL.revokeObjectURL(url);
+    img.src = url;
+  }
+
   /** Passthrough: set kekuatan smoothing (0..100). */
   setSmoothing(value: number): void {
     this.fingerFrame.setSmoothing(value);

@@ -282,6 +282,19 @@ const TEXT_FRAG = /* glsl */ `
   }
 `;
 
+// "Image" effect: TIDAK sample webcam. Sample gambar (RGBA) via vUv → bagian
+// transparan gambar tembus webcam, bagian non-transparan menampilkan gambar.
+const IMAGE_FRAG = /* glsl */ `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uImageTex;
+
+  void main() {
+    vec4 c = texture2D(uImageTex, vUv);
+    gl_FragColor = vec4(c.rgb, c.a);
+  }
+`;
+
 // Edge outline tetap pakai UV unit-square lokal (posisi border quad itu
 // sendiri), jadi TIDAK perlu diubah — biarkan pakai vUv dari uv plane.
 const EDGE_VERTEX_SHADER = /* glsl */ `
@@ -331,7 +344,7 @@ const EDGE_FRAG = /* glsl */ `
 export type EffectKind =
   | "pixelate" | "sobel-x" | "invert" | "grayscale" | "blur"
   | "emboss" | "posterize" | "threshold" | "sepia" | "sharpen" | "text"
-  | "bendera";
+  | "bendera" | "image";
 
 export interface EffectDef {
   id: EffectKind;
@@ -351,6 +364,7 @@ export const EFFECTS: EffectDef[] = [
   { id: "sharpen", label: "Sharpen" },
   { id: "text", label: "Text" },
   { id: "bendera", label: "Bendera" },
+  { id: "image", label: "Image" },
 ];
 
 const EFFECT_FRAG: Record<EffectKind, string> = {
@@ -366,6 +380,7 @@ const EFFECT_FRAG: Record<EffectKind, string> = {
   "sharpen": SHARPEN_FRAG,
   "text": TEXT_FRAG,
   "bendera": BENDERA_FRAG,
+  "image": IMAGE_FRAG,
 };
 
 export interface EffectQuadOptions {
@@ -396,6 +411,7 @@ export class EffectQuad {
   private uMirror: { value: number };
   private uTextTex: { value: THREE.Texture };
   private uTextColor: { value: THREE.Color };
+  private uImageTex: { value: THREE.Texture };
   private currentEffect: EffectKind;
   private visible = true;
 
@@ -416,6 +432,7 @@ export class EffectQuad {
     this.uMirror = { value: 0.0 };
     this.uTextTex = { value: makeTextTexture("") };
     this.uTextColor = { value: new THREE.Color(0xffffff) };
+    this.uImageTex = { value: makeTransparentTexture() };
     this.currentEffect = opts.effect;
 
     this.material = this.buildMaterial(opts.effect);
@@ -446,8 +463,9 @@ export class EffectQuad {
         uMirror: this.uMirror,
         uTextTex: this.uTextTex,
         uTextColor: this.uTextColor,
+        uImageTex: this.uImageTex,
       },
-      transparent: effect === "text",
+      transparent: effect === "text" || effect === "image",
       depthTest: false,
       depthWrite: false,
       side: THREE.DoubleSide,
@@ -473,6 +491,11 @@ export class EffectQuad {
   /** Set warna teks (hex). */
   setTextColor(hex: number): void {
     this.uTextColor.value.setHex(hex);
+  }
+
+  /** Set gambar untuk effect "image". */
+  setImage(texture: THREE.Texture): void {
+    this.uImageTex.value = texture;
   }
 
   /** Posisi quad di layar (world coords), ikut jari. */
@@ -517,6 +540,7 @@ export class EffectQuad {
     this.mesh.geometry.dispose();
     this.material.dispose();
     if (this.uTextTex.value && this.uTextTex.value.dispose) this.uTextTex.value.dispose();
+    if (this.uImageTex.value && this.uImageTex.value.dispose) this.uImageTex.value.dispose();
   }
 }
 
@@ -702,6 +726,22 @@ function makeCircleSprite(size: number): THREE.CanvasTexture {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, size, size);
 
+  const tex = new THREE.CanvasTexture(cv);
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/**
+ * Buat texture 1×1 transparan (fallback aman sebelum gambar asli di-set).
+ */
+function makeTransparentTexture(): THREE.CanvasTexture {
+  const cv = document.createElement("canvas");
+  cv.width = 1;
+  cv.height = 1;
+  const ctx = cv.getContext("2d")!;
+  ctx.clearRect(0, 0, 1, 1);
   const tex = new THREE.CanvasTexture(cv);
   tex.minFilter = THREE.LinearFilter;
   tex.magFilter = THREE.LinearFilter;

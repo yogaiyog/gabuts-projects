@@ -64,6 +64,9 @@ async function bootstrap() {
     onSmoothChange: (value: number) => {
       compositor.setSmoothing(value);
     },
+    onImageUpload: (file: File) => {
+      compositor.setImageFromFile(file);
+    },
     onStart: () => {
       void startCamera();
     },
@@ -73,6 +76,9 @@ async function bootstrap() {
   compositor.setFrames(frameState);
   compositor.setEffects(effectsState);
   setFramesVisible(ui, DEFAULT_MODE === "frame");
+
+  // Load gambar default untuk effect "image".
+  compositor.loadImageFromUrl("/juaraku-text-2.png");
 
   function updateModeStatus(): void {
     if (!tracker) return;

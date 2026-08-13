@@ -56,9 +56,10 @@ export function buildUI(opts: {
   onEffectsChange: (state: FrameEffects) => void;
   onTextChange: (text: string) => void;
   onSmoothChange: (value: number) => void;
+  onImageUpload: (file: File) => void;
   onStart: () => void;
 }): UIElements {
-  const { parent, onModeChange, onFramesChange, onEffectsChange, onTextChange, onSmoothChange, onStart } = opts;
+  const { parent, onModeChange, onFramesChange, onEffectsChange, onTextChange, onSmoothChange, onImageUpload, onStart } = opts;
 
   const effectOptions = EFFECTS.map((e) => `<option value="${e.id}">${e.label}</option>`).join("");
   const modeOptions = MODE_ORDER.map(
@@ -68,8 +69,10 @@ export function buildUI(opts: {
   parent.innerHTML = `
     <div class="ui-overlay">
       <header class="ui-header">
-        <div class="ui-title">mr.iyog gabuts Projects</div>
-        <div class="ui-sub">TouchDesigner port · MediaPipe + Three.js</div>
+        <div class="ui-header-text">
+          <div class="ui-title">mr.iyog gabuts Projects</div>
+          <div class="ui-sub">TouchDesigner port · MediaPipe + Three.js</div>
+        </div>
       </header>
 
       <div class="ui-center">
@@ -80,33 +83,44 @@ export function buildUI(opts: {
       </div>
 
       <footer class="ui-controls">
+        <div class="ui-controls-inner">
         <div id="ui-status" class="ui-status ui-status--idle">Click "Start Camera" to begin</div>
-        <div id="ui-frames" class="ui-frames" hidden>
-          <button data-frame="thumbIndex" class="ui-frame-btn active">Thumb+Index</button>
-          <button data-frame="indexMiddle" class="ui-frame-btn active">Index+Middle</button>
+         <button id="ui-toggle-controls" class="ui-hide-btn">Hide</button>
+        <div class="ui-settings" id="ui-settings">
+          <div class="ui-settings-inner">
+            <div id="ui-frames" class="ui-frames" hidden>
+              <button data-frame="thumbIndex" class="ui-frame-btn active">Thumb+Index</button>
+              <button data-frame="indexMiddle" class="ui-frame-btn active">Index+Middle</button>
+            </div>
+            <div id="ui-effects" class="ui-effects" hidden>
+              <label class="ui-effect-row">
+                <span>Index+Middle</span>
+                <select data-effect="indexMiddle" class="ui-effect-select">${effectOptions}</select>
+              </label>
+              <label class="ui-effect-row">
+                <span>Thumb+Index</span>
+                <select data-effect="thumbIndex" class="ui-effect-select">${effectOptions}</select>
+              </label>
+              <label class="ui-effect-row" id="ui-text-row" hidden>
+                <span>Text</span>
+                <input id="ui-text-input" class="ui-text-input" type="text" placeholder="Type text…" />
+              </label>
+              <label class="ui-effect-row" id="ui-image-row" hidden>
+                <span>Image</span>
+                <input id="ui-image-input" class="ui-image-input" type="file" accept="image/*" />
+              </label>
+              <label class="ui-effect-row">
+                <span>Smooth</span>
+                <input id="ui-smooth" class="ui-smooth" type="range" min="0" max="100" value="50" />
+              </label>
+            </div>
+            <label class="ui-effect-row" id="ui-mode-row" hidden>
+              <span>Mode</span>
+              <select id="ui-mode-select" class="ui-effect-select">${modeOptions}</select>
+            </label>
+          </div>
         </div>
-        <div id="ui-effects" class="ui-effects" hidden>
-          <label class="ui-effect-row">
-            <span>Index+Middle</span>
-            <select data-effect="indexMiddle" class="ui-effect-select">${effectOptions}</select>
-          </label>
-          <label class="ui-effect-row">
-            <span>Thumb+Index</span>
-            <select data-effect="thumbIndex" class="ui-effect-select">${effectOptions}</select>
-          </label>
-          <label class="ui-effect-row" id="ui-text-row" hidden>
-            <span>Text</span>
-            <input id="ui-text-input" class="ui-text-input" type="text" placeholder="Type text…" />
-          </label>
-          <label class="ui-effect-row">
-            <span>Smooth</span>
-            <input id="ui-smooth" class="ui-smooth" type="range" min="0" max="100" value="50" />
-          </label>
         </div>
-        <label class="ui-effect-row" id="ui-mode-row" hidden>
-          <span>Mode</span>
-          <select id="ui-mode-select" class="ui-effect-select">${modeOptions}</select>
-        </label>
       </footer>
     </div>
   `;
@@ -118,6 +132,8 @@ export function buildUI(opts: {
   const effectsEl = parent.querySelector<HTMLElement>("#ui-effects")!;
   const textRowEl = parent.querySelector<HTMLElement>("#ui-text-row")!;
   const textEl = parent.querySelector<HTMLInputElement>("#ui-text-input")!;
+  const imageRowEl = parent.querySelector<HTMLElement>("#ui-image-row")!;
+  const imageInputEl = parent.querySelector<HTMLInputElement>("#ui-image-input")!;
   const startBtn = parent.querySelector<HTMLElement>("#ui-start")!;
 
   startBtn.addEventListener("click", () => {
@@ -146,15 +162,29 @@ export function buildUI(opts: {
     onTextChange(textEl.value);
   });
 
+  imageInputEl.addEventListener("change", () => {
+    const file = imageInputEl.files?.[0];
+    if (file) onImageUpload(file);
+  });
+
   const smoothEl = parent.querySelector<HTMLInputElement>("#ui-smooth")!;
   smoothEl.addEventListener("input", () => {
     onSmoothChange(Number(smoothEl.value));
+  });
+
+  const settingsEl = parent.querySelector<HTMLElement>("#ui-settings")!;
+  const toggleBtn = parent.querySelector<HTMLElement>("#ui-toggle-controls")!;
+  toggleBtn.addEventListener("click", () => {
+    const willHide = !settingsEl.classList.contains("collapsed");
+    settingsEl.classList.toggle("collapsed", willHide);
+    toggleBtn.textContent = willHide ? "Show" : "Hide";
   });
 
   function updateTextRowVisibility(): void {
     const s1 = effectsEl.querySelector<HTMLSelectElement>('[data-effect="thumbIndex"]')?.value as EffectKind;
     const s2 = effectsEl.querySelector<HTMLSelectElement>('[data-effect="indexMiddle"]')?.value as EffectKind;
     textRowEl.hidden = !(s1 === "text" || s2 === "text");
+    imageRowEl.hidden = !(s1 === "image" || s2 === "image");
   }
 
   return { container: parent, statusEl, modesEl, framesEl, effectsEl, textEl, startBtn };
