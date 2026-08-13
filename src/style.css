@@ -87,6 +87,52 @@ body {
   gap: 4px;
 }
 
+.ui-record-btn {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.4);
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  padding: 8px 18px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.ui-record-btn:hover {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+
+.ui-record-btn .ui-record-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--err);
+  opacity: 0;
+}
+
+.ui-record-btn.recording {
+  background: rgba(255, 107, 107, 0.15);
+  border-color: var(--err);
+  color: var(--err);
+}
+
+.ui-record-btn.recording .ui-record-dot {
+  opacity: 1;
+  animation: ui-record-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes ui-record-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
 .ui-title {
   font-size: 18px;
   font-weight: 600;

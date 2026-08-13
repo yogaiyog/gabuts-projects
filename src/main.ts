@@ -18,7 +18,8 @@ import { Camera } from "./camera.js";
 import { HandTracker } from "./handTracker.js";
 import { Compositor } from "./compositor.js";
 import { generateARPatternTexture } from "./arPattern.js";
-import { buildUI, setStatus, showModes, hideStart, setFramesVisible, type UIMode, type FrameState, type FrameEffects } from "./ui.js";
+import { buildUI, setStatus, showModes, hideStart, setFramesVisible, showRecord, setRecording, type UIMode, type FrameState, type FrameEffects } from "./ui.js";
+import { CanvasRecorder, downloadBlob } from "./recorder.js";
 import type { MultiHandResult } from "./handTracker.js";
 
 const DEFAULT_MODE: UIMode = "frame";
@@ -42,6 +43,7 @@ async function bootstrap() {
   let currentMode: UIMode = DEFAULT_MODE;
   let frameState: FrameState = { thumbIndex: true, indexMiddle: true };
   let effectsState: FrameEffects = { thumbIndex: "pixelate", indexMiddle: "sobel-x" };
+  const recorder = new CanvasRecorder();
   const ui = buildUI({
     parent: overlay,
     onModeChange: (mode: UIMode) => {
@@ -66,6 +68,17 @@ async function bootstrap() {
     },
     onImageUpload: (file: File) => {
       compositor.setImageFromFile(file);
+    },
+    onRecordToggle: () => {
+      if (recorder.isRecording) {
+        recorder.stop().then((blob) => {
+          downloadBlob(blob, `recording-${Date.now()}.${recorder.getExtension()}`);
+          setRecording(ui, false);
+        });
+      } else {
+        recorder.start(canvas, 30);
+        setRecording(ui, true);
+      }
     },
     onStart: () => {
       void startCamera();
@@ -134,6 +147,7 @@ async function bootstrap() {
 
       setStatus(ui, currentModeStatus(currentMode, lastHandsResult, null).msg, "ok");
       showModes(ui);
+      showRecord(ui);
 
       compositor.start((timeSec) => {
         const ts = performance.now();

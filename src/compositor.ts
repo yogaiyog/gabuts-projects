@@ -88,6 +88,7 @@ export class Compositor {
       antialias: true,
       alpha: false,
       powerPreference: "high-performance",
+      preserveDrawingBuffer: true, // biar captureStream() recording andal
     });
     this.renderer.setClearColor(0x000000, 1);
 

@@ -37,6 +37,7 @@ export interface UIElements {
   effectsEl: HTMLElement;
   textEl: HTMLInputElement;
   startBtn: HTMLElement;
+  recordBtn: HTMLElement;
 }
 
 const MODE_LABELS: Record<UIMode, string> = {
@@ -57,9 +58,10 @@ export function buildUI(opts: {
   onTextChange: (text: string) => void;
   onSmoothChange: (value: number) => void;
   onImageUpload: (file: File) => void;
+  onRecordToggle: () => void;
   onStart: () => void;
 }): UIElements {
-  const { parent, onModeChange, onFramesChange, onEffectsChange, onTextChange, onSmoothChange, onImageUpload, onStart } = opts;
+  const { parent, onModeChange, onFramesChange, onEffectsChange, onTextChange, onSmoothChange, onImageUpload, onRecordToggle, onStart } = opts;
 
   const effectOptions = EFFECTS.map((e) => `<option value="${e.id}">${e.label}</option>`).join("");
   const modeOptions = MODE_ORDER.map(
@@ -73,6 +75,10 @@ export function buildUI(opts: {
           <div class="ui-title">mr.iyog gabuts Projects</div>
           <div class="ui-sub">TouchDesigner port · MediaPipe + Three.js</div>
         </div>
+        <button id="ui-record" class="ui-record-btn" hidden>
+          <span class="ui-record-dot"></span>
+          <span class="ui-record-label">Record</span>
+        </button>
       </header>
 
       <div class="ui-center">
@@ -135,9 +141,14 @@ export function buildUI(opts: {
   const imageRowEl = parent.querySelector<HTMLElement>("#ui-image-row")!;
   const imageInputEl = parent.querySelector<HTMLInputElement>("#ui-image-input")!;
   const startBtn = parent.querySelector<HTMLElement>("#ui-start")!;
+  const recordBtn = parent.querySelector<HTMLElement>("#ui-record")!;
 
   startBtn.addEventListener("click", () => {
     onStart();
+  });
+
+  recordBtn.addEventListener("click", () => {
+    onRecordToggle();
   });
 
   modeSelect.addEventListener("change", () => {
@@ -187,7 +198,7 @@ export function buildUI(opts: {
     imageRowEl.hidden = !(s1 === "image" || s2 === "image");
   }
 
-  return { container: parent, statusEl, modesEl, framesEl, effectsEl, textEl, startBtn };
+  return { container: parent, statusEl, modesEl, framesEl, effectsEl, textEl, startBtn, recordBtn };
 }
 
 export function setStatus(ui: UIElements, message: string, kind: "idle" | "loading" | "ok" | "err" = "idle"): void {
@@ -197,6 +208,16 @@ export function setStatus(ui: UIElements, message: string, kind: "idle" | "loadi
 
 export function showModes(ui: UIElements): void {
   ui.modesEl.hidden = false;
+}
+
+export function showRecord(ui: UIElements): void {
+  ui.recordBtn.hidden = false;
+}
+
+export function setRecording(ui: UIElements, recording: boolean): void {
+  ui.recordBtn.classList.toggle("recording", recording);
+  const label = ui.recordBtn.querySelector<HTMLElement>(".ui-record-label");
+  if (label) label.textContent = recording ? "Stop" : "Record";
 }
 
 export function setFramesVisible(ui: UIElements, visible: boolean): void {
