@@ -1,55 +1,64 @@
 /**
- * effects.ts
+ * effects.ts (PATCHED)
  * ===========
- * Three.js meshes dengan corner-pin vertex shader + custom fragment shader
- * untuk efek "Finger Frame" mode (mirror comp5 root-project1).
+ * Fix: vertex shader sekarang punya DUA bilinear mapping terpisah:
+ *   1. uCorner* (world space) → posisi quad di layar, ikut jari.
+ *   2. uUv*     (0..1 texture space, dari landmark mentah) → UV yang
+ *      dipakai fragment untuk sample texture.
  *
- * Dua komponen:
- *   - `EffectQuad`: corner-pin quad dengan frag pixelate atau Sobel-X
- *                   diaplikasikan ke webcam texture.
- *   - `EdgeQuad`: corner-pin quad yang hanya render outline putih
- *                 (UV proximity test → discard otherwise).
- *
- * Vertex shader identik dengan `warpQuad.ts` (bilinear forward mapping).
+ * Sebelumnya `vUv = uv` (UV plane utuh 0..1) dikirim ke fragment,
+ * sehingga fragment selalu sample SELURUH frame webcam lalu di-squeeze
+ * ke bentuk quad kecil — bukan meng-crop area yang ada di belakang
+ * frame jari. Itu penyebab "instance webcam baru" yang terlihat di
+ * dalam rectangle.
  */
 
 import * as THREE from "three";
 
 // ──────────────────────────────────────────────────────────────────────
-// Vertex shader (shared)
+// Vertex shader (shared) — PATCHED: vSampleUv terpisah dari posisi
 // ──────────────────────────────────────────────────────────────────────
 const CORNER_VERTEX_SHADER = /* glsl */ `
-  varying vec2 vUv;
+  varying vec2 vSampleUv;
+
+  // World-space corners (posisi quad di layar, ikut jari)
   uniform vec2 uCornerBL;
   uniform vec2 uCornerBR;
   uniform vec2 uCornerTR;
   uniform vec2 uCornerTL;
 
+  // Texture-space UV corners (area video yang di-crop, dari landmark mentah)
+  uniform vec2 uUvBL;
+  uniform vec2 uUvBR;
+  uniform vec2 uUvTR;
+  uniform vec2 uUvTL;
+
   void main() {
-    // Bilinear forward mapping dari unit-square UV ke 4-corner quad.
+    // Bilinear forward mapping dari unit-square UV ke 4-corner quad (posisi).
     vec2 dst =
         (1.0 - uv.x) * (1.0 - uv.y) * uCornerBL
       +        uv.x  * (1.0 - uv.y) * uCornerBR
       + (1.0 - uv.x) *        uv.y  * uCornerTL
       +        uv.x  *        uv.y  * uCornerTR;
 
-    vUv = uv;
+    // Bilinear forward mapping dari unit-square UV ke 4-corner UV (sample).
+    vSampleUv =
+        (1.0 - uv.x) * (1.0 - uv.y) * uUvBL
+      +        uv.x  * (1.0 - uv.y) * uUvBR
+      + (1.0 - uv.x) *        uv.y  * uUvTL
+      +        uv.x  *        uv.y  * uUvTR;
+
     gl_Position = projectionMatrix * modelViewMatrix * vec4(dst, 0.0, 1.0);
   }
 `;
 
 // ──────────────────────────────────────────────────────────────────────
-// Fragment shaders
+// Fragment shaders — PATCHED: pakai vSampleUv, bukan vUv
 // ──────────────────────────────────────────────────────────────────────
 
-/**
- * Pixelate (mirip TD `pixelate.tox`, Horsize=28, Vertsize=27).
- * Block size dalam pixel; assumes uTexSize = webcam dimensi.
- * uMirror: 1.0 untuk selfie mode (flip X), 0.0 untuk raw.
- */
 const PIXELATE_FRAG = /* glsl */ `
   precision highp float;
-  varying vec2 vUv;
+  varying vec2 vSampleUv;
   uniform sampler2D uTex;
   uniform vec2 uTexSize;
   uniform float uBlockH;
@@ -57,7 +66,7 @@ const PIXELATE_FRAG = /* glsl */ `
   uniform float uMirror;
 
   void main() {
-    vec2 mirrorUv = vec2(mix(vUv.x, 1.0 - vUv.x, uMirror), vUv.y);
+    vec2 mirrorUv = vec2(mix(vSampleUv.x, 1.0 - vSampleUv.x, uMirror), vSampleUv.y);
     vec2 px = mirrorUv * uTexSize;
     vec2 block = floor(px / vec2(uBlockH, uBlockV)) * vec2(uBlockH, uBlockV);
     vec2 blockCenterUV = (block + vec2(uBlockH, uBlockV) * 0.5) / uTexSize;
@@ -66,14 +75,9 @@ const PIXELATE_FRAG = /* glsl */ `
   }
 `;
 
-/**
- * Sobel-X grayscale (mirip TD `convolve1` kernel
- * [ 1 0 -1 / 2 0 -2 / 1 0 -1 ], divisor 1, offset 0).
- * uMirror: flip X seperti di atas.
- */
 const SOBELX_FRAG = /* glsl */ `
   precision highp float;
-  varying vec2 vUv;
+  varying vec2 vSampleUv;
   uniform sampler2D uTex;
   uniform vec2 uTexSize;
   uniform float uMirror;
@@ -85,14 +89,14 @@ const SOBELX_FRAG = /* glsl */ `
 
   void main() {
     vec2 px = 1.0 / uTexSize;
-    float tl = sampleGray(vUv + vec2(-px.x,  px.y));
-    float t_ = sampleGray(vUv + vec2(   0.0, px.y));
-    float tr = sampleGray(vUv + vec2( px.x,  px.y));
-    float ml = sampleGray(vUv + vec2(-px.x,   0.0));
-    float mr = sampleGray(vUv + vec2( px.x,   0.0));
-    float bl = sampleGray(vUv + vec2(-px.x, -px.y));
-    float b_ = sampleGray(vUv + vec2(   0.0,-px.y));
-    float br = sampleGray(vUv + vec2( px.x, -px.y));
+    float tl = sampleGray(vSampleUv + vec2(-px.x,  px.y));
+    float t_ = sampleGray(vSampleUv + vec2(   0.0, px.y));
+    float tr = sampleGray(vSampleUv + vec2( px.x,  px.y));
+    float ml = sampleGray(vSampleUv + vec2(-px.x,   0.0));
+    float mr = sampleGray(vSampleUv + vec2( px.x,   0.0));
+    float bl = sampleGray(vSampleUv + vec2(-px.x, -px.y));
+    float b_ = sampleGray(vSampleUv + vec2(   0.0,-px.y));
+    float br = sampleGray(vSampleUv + vec2( px.x, -px.y));
 
     float gx = 1.0 * tl + 0.0 * t_ + (-1.0) * tr
              + 2.0 * ml             + (-2.0) * mr
@@ -104,10 +108,26 @@ const SOBELX_FRAG = /* glsl */ `
   }
 `;
 
-/**
- * Edge outline: render putih hanya untuk frag yang dekat UV border.
- * Min(uv.x, 1-uv.x, uv.y, 1-uv.y) < uEdgeFrac → white, else → discard.
- */
+// Edge outline tetap pakai UV unit-square lokal (posisi border quad itu
+// sendiri), jadi TIDAK perlu diubah — biarkan pakai vUv dari uv plane.
+const EDGE_VERTEX_SHADER = /* glsl */ `
+  varying vec2 vUv;
+  uniform vec2 uCornerBL;
+  uniform vec2 uCornerBR;
+  uniform vec2 uCornerTR;
+  uniform vec2 uCornerTL;
+
+  void main() {
+    vec2 dst =
+        (1.0 - uv.x) * (1.0 - uv.y) * uCornerBL
+      +        uv.x  * (1.0 - uv.y) * uCornerBR
+      + (1.0 - uv.x) *        uv.y  * uCornerTL
+      +        uv.x  *        uv.y  * uCornerTR;
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(dst, 0.0, 1.0);
+  }
+`;
+
 const EDGE_FRAG = /* glsl */ `
   precision highp float;
   varying vec2 vUv;
@@ -146,6 +166,10 @@ export class EffectQuad {
   private uCornerBR: { value: THREE.Vector2 };
   private uCornerTR: { value: THREE.Vector2 };
   private uCornerTL: { value: THREE.Vector2 };
+  private uUvBL: { value: THREE.Vector2 };
+  private uUvBR: { value: THREE.Vector2 };
+  private uUvTR: { value: THREE.Vector2 };
+  private uUvTL: { value: THREE.Vector2 };
   private uTexSize: { value: THREE.Vector2 };
   private uBlockH: { value: number };
   private uBlockV: { value: number };
@@ -158,11 +182,16 @@ export class EffectQuad {
     this.uCornerBR = { value: new THREE.Vector2(1, -1) };
     this.uCornerTR = { value: new THREE.Vector2(1, 1) };
     this.uCornerTL = { value: new THREE.Vector2(-1, 1) };
+    // Default UV corners = seluruh texture (fallback aman sebelum setUvCorners dipanggil)
+    this.uUvBL = { value: new THREE.Vector2(0, 1) };
+    this.uUvBR = { value: new THREE.Vector2(1, 1) };
+    this.uUvTR = { value: new THREE.Vector2(1, 0) };
+    this.uUvTL = { value: new THREE.Vector2(0, 0) };
     this.uTexSize = { value: new THREE.Vector2(opts.texSize.width, opts.texSize.height) };
     this.uBlockH = { value: opts.blockH ?? 28 };
     this.uBlockV = { value: opts.blockV ?? 27 };
     this.uTex = { value: opts.sourceTexture };
-    this.uMirror = { value: 1.0 };
+    this.uMirror = { value: 0.0 };
 
     const frag = opts.effect === "pixelate" ? PIXELATE_FRAG : SOBELX_FRAG;
 
@@ -174,6 +203,10 @@ export class EffectQuad {
         uCornerBR: this.uCornerBR,
         uCornerTR: this.uCornerTR,
         uCornerTL: this.uCornerTL,
+        uUvBL: this.uUvBL,
+        uUvBR: this.uUvBR,
+        uUvTR: this.uUvTR,
+        uUvTL: this.uUvTL,
         uTexSize: this.uTexSize,
         uBlockH: this.uBlockH,
         uBlockV: this.uBlockV,
@@ -192,11 +225,24 @@ export class EffectQuad {
     this.mesh.frustumCulled = false;
   }
 
+  /** Posisi quad di layar (world coords), ikut jari. */
   setCorners(bl: THREE.Vector2, br: THREE.Vector2, tr: THREE.Vector2, tl: THREE.Vector2): void {
     this.uCornerBL.value.copy(bl);
     this.uCornerBR.value.copy(br);
     this.uCornerTR.value.copy(tr);
     this.uCornerTL.value.copy(tl);
+  }
+
+  /**
+   * Area video yang di-crop (texture-space UV, 0..1), dari landmark
+   * mentah — INI yang menentukan konten apa yang muncul di dalam quad,
+   * bukan `setCorners`.
+   */
+  setUvCorners(bl: THREE.Vector2, br: THREE.Vector2, tr: THREE.Vector2, tl: THREE.Vector2): void {
+    this.uUvBL.value.copy(bl);
+    this.uUvBR.value.copy(br);
+    this.uUvTR.value.copy(tr);
+    this.uUvTL.value.copy(tl);
   }
 
   setMirror(mirror: boolean): void {
@@ -224,7 +270,7 @@ export class EffectQuad {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// EdgeQuad
+// EdgeQuad (tidak berubah secara fungsional — tetap pakai plain uv)
 // ──────────────────────────────────────────────────────────────────────
 
 export interface EdgeQuadOptions {
@@ -251,7 +297,7 @@ export class EdgeQuad {
     this.uEdgeFrac = { value: opts.edgeFrac ?? 0.035 };
 
     this.material = new THREE.ShaderMaterial({
-      vertexShader: CORNER_VERTEX_SHADER,
+      vertexShader: EDGE_VERTEX_SHADER,
       fragmentShader: EDGE_FRAG,
       uniforms: {
         uCornerBL: this.uCornerBL,

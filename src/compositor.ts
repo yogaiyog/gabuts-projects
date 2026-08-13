@@ -5,17 +5,17 @@
  *   - "2d"     : webcam + rainbow AR pattern warp (legacy)
  *   - "3d"     : webcam + 3D torus anchor ke palm (legacy)
  *   - "hybrid" : 2D + 3D (legacy)
- *   - "frame"  : webcam + 2 hand-frame window (pixelate + Sobel-X + edge)
+ *   - "frame"  : webcam + 2 hand-frame window (pixelate + Sobel-X)
  *                mirror comp5 root-project1 flow
  *
  * Render pipeline (mode="frame"):
- *   BG (0) → pixQuad1 (10) → edge1 (11) → sobelQuad2 (20) → edge2 (21)
+ *   BG (0) → pixQuad1 (10) → sobelQuad2 (20)
  */
 
 import * as THREE from "three";
 import { WarpQuad } from "./warpQuad.js";
 import { Anchored3D } from "./anchored3D.js";
-import { EffectQuad, EdgeQuad } from "./effects.js";
+import { FingerFrameCompositor } from "./fingerFrame.js";
 import type { MultiHandResult, Pt2 } from "./handTracker.js";
 
 export type RenderMode = "2d" | "3d" | "hybrid" | "frame";
@@ -69,16 +69,12 @@ export class Compositor {
   readonly warpQuad: WarpQuad;
   readonly anchored3D: Anchored3D;
 
-  // ──────── Finger-Frame mode components ────────
-  readonly pixQuad: EffectQuad;   // corner1 → pixelate
-  readonly edge1: EdgeQuad;       // outline corner1
-  readonly sobelQuad: EffectQuad; // corner2 → Sobel-X
-  readonly edge2: EdgeQuad;       // outline corner2
+  // ──────── Finger-Frame mode (comp5) ────────
+  readonly fingerFrame: FingerFrameCompositor;
 
   // state
   private aspect = 1;
   private mode: RenderMode = "hybrid";
-  private flipBG = true;
   private texSize = { width: 1280, height: 720 };
 
   // lifecycle
@@ -140,35 +136,7 @@ export class Compositor {
     this.scene.add(this.anchored3D.group);
 
     // ──────── Finger Frame mode (comp5) ────────
-    this.pixQuad = new EffectQuad({
-      sourceTexture: this.videoTexture,
-      effect: "pixelate",
-      texSize: this.texSize,
-      blockH: 28,
-      blockV: 27,
-      renderOrder: 10,
-    });
-    this.scene.add(this.pixQuad.mesh);
-
-    this.edge1 = new EdgeQuad({
-      renderOrder: 11,
-      edgeFrac: 0.035,
-    });
-    this.scene.add(this.edge1.mesh);
-
-    this.sobelQuad = new EffectQuad({
-      sourceTexture: this.videoTexture,
-      effect: "sobel-x",
-      texSize: this.texSize,
-      renderOrder: 20,
-    });
-    this.scene.add(this.sobelQuad.mesh);
-
-    this.edge2 = new EdgeQuad({
-      renderOrder: 21,
-      edgeFrac: 0.035,
-    });
-    this.scene.add(this.edge2.mesh);
+    this.fingerFrame = new FingerFrameCompositor(this.scene, this.videoTexture, this.texSize);
 
     // default: legacy hybrid mode
     this.setMode("hybrid");
@@ -188,10 +156,7 @@ export class Compositor {
       height: video.videoHeight || 720,
     };
     (this.bgMaterial.uniforms.uTex as { value: THREE.Texture }).value = vt;
-    this.pixQuad.setMirror(this.flipBG);
-    this.sobelQuad.setMirror(this.flipBG);
-    this.pixQuad.setTexture(vt, this.texSize);
-    this.sobelQuad.setTexture(vt, this.texSize);
+    this.fingerFrame.setTexture(vt, this.texSize);
   }
 
   setMode(mode: RenderMode): void {
@@ -204,17 +169,11 @@ export class Compositor {
 
     this.warpQuad.setVisible(showWarp);
     this.anchored3D.group.visible = show3D;
-    this.pixQuad.setVisible(isFrame);
-    this.edge1.setVisible(isFrame);
-    this.sobelQuad.setVisible(isFrame);
-    this.edge2.setVisible(isFrame);
+    this.fingerFrame.setVisible(isFrame);
   }
 
   setMirrorSelfie(enabled: boolean): void {
-    this.flipBG = enabled;
     (this.bgMaterial.uniforms.uMirror as { value: number }).value = enabled ? 1.0 : 0.0;
-    this.pixQuad.setMirror(enabled);
-    this.sobelQuad.setMirror(enabled);
   }
 
   resize(width: number, height: number): void {
@@ -244,7 +203,7 @@ export class Compositor {
     };
 
     if (this.mode === "frame") {
-      this.renderFrameMode(hand, v);
+      this.fingerFrame.render(hand, this.aspect);
     } else {
       this.renderLegacyMode(hand, v, timeSeconds);
     }
@@ -290,47 +249,7 @@ export class Compositor {
   }
 
   // ─── Finger Frame mode (comp5: 2 hand-frame window) ───
-  private renderFrameMode(
-    hand: MultiHandResult,
-    v: (mx: number, my: number) => THREE.Vector2,
-  ): void {
-    if (hand.numDetected < 2) {
-      // Butuh 2 tangan → sembunyikan frame meshes
-      this.pixQuad.setVisible(false);
-      this.edge1.setVisible(false);
-      this.sobelQuad.setVisible(false);
-      this.edge2.setVisible(false);
-      return;
-    }
-
-    const h1 = hand.hands[0];
-    const h2 = hand.hands[1];
-
-    // ──────── corner1 = thumb-index frame ────────
-    // BL = h1.thumbTip, BR = h2.thumbTip, TL = h1.indexTip, TR = h2.indexTip
-    const c1BL = v(h1.thumbTip.x, h1.thumbTip.y);
-    const c1BR = v(h2.thumbTip.x, h2.thumbTip.y);
-    const c1TL = v(h1.indexTip.x, h1.indexTip.y);
-    const c1TR = v(h2.indexTip.x, h2.indexTip.y);
-    this.pixQuad.setCorners(c1BL, c1BR, c1TR, c1TL);
-    this.edge1.setCorners(c1BL, c1BR, c1TR, c1TL);
-    this.pixQuad.setVisible(true);
-    this.edge1.setVisible(true);
-
-    // ──────── corner2 = index-middle frame (TD TYPO preserved) ────────
-    // BL = h1.indexTip, BR = h2.indexTip,
-    // TL: x = h1.middleDip.x  ← TD typo (seharusnya middleTip.x)
-    //     y = h1.middleTip.y
-    // TR = h2.middleTip
-    const c2BL = v(h1.indexTip.x, h1.indexTip.y);
-    const c2BR = v(h2.indexTip.x, h2.indexTip.y);
-    const c2TL = v(h1.middleDip.x, h1.middleTip.y); // ← typo (TD original)
-    const c2TR = v(h2.middleTip.x, h2.middleTip.y);
-    this.sobelQuad.setCorners(c2BL, c2BR, c2TR, c2TL);
-    this.edge2.setCorners(c2BL, c2BR, c2TR, c2TL);
-    this.sobelQuad.setVisible(true);
-    this.edge2.setVisible(true);
-  }
+  // Dipindah ke src/fingerFrame.ts (FingerFrameCompositor).
 
   // ──────────────────── lifecycle ────────────────────
   start(onFrame?: (t: number) => void): void {
@@ -361,10 +280,7 @@ export class Compositor {
     this.bgMesh.geometry.dispose();
     this.warpQuad.dispose();
     this.anchored3D.dispose();
-    this.pixQuad.dispose();
-    this.edge1.dispose();
-    this.sobelQuad.dispose();
-    this.edge2.dispose();
+    this.fingerFrame.dispose();
     this.renderer.dispose();
   }
 
