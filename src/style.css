@@ -1,0 +1,222 @@
+/* Web AR — Hand Filter styles */
+
+:root {
+  --bg: #050608;
+  --fg: #f4f6f8;
+  --muted: #94a0b0;
+  --accent: #6ad6ff;
+  --accent-dim: rgba(106, 214, 255, 0.4);
+  --warn: #ffb84a;
+  --err: #ff6b6b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow: hidden;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+}
+
+#ar-canvas {
+  width: 100%;
+  height: 100%;
+  max-width: 100vw;
+  max-height: 100vh;
+  object-fit: contain;
+  background: #000;
+  display: block;
+}
+
+#ui-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ui-overlay {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.ui-overlay > * {
+  pointer-events: auto;
+}
+
+.ui-header {
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.65), transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.ui-title {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--fg);
+}
+
+.ui-sub {
+  font-size: 12px;
+  color: var(--muted);
+  letter-spacing: 0.5px;
+}
+
+.ui-center {
+  flex: 1;
+  display: grid;
+  place-items: center;
+}
+
+.ui-start-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 28px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  background: var(--accent);
+  color: #001a26;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 6px 24px var(--accent-dim), 0 0 0 4px rgba(106, 214, 255, 0.1);
+  transition: transform 120ms ease, box-shadow 220ms ease;
+}
+
+.ui-start-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 28px var(--accent-dim), 0 0 0 6px rgba(106, 214, 255, 0.18);
+}
+
+.ui-start-btn:active {
+  transform: translateY(1px);
+}
+
+.ui-start-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #001a26;
+  box-shadow: 0 0 0 4px rgba(0, 26, 38, 0.2);
+}
+
+.ui-controls {
+  padding: 16px 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.65), transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.ui-status {
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  letter-spacing: 0.3px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--fg);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ui-status--loading {
+  color: var(--warn);
+  border-color: rgba(255, 184, 74, 0.3);
+  background: rgba(255, 184, 74, 0.08);
+}
+
+.ui-status--ok {
+  color: #6affb6;
+  border-color: rgba(106, 255, 182, 0.3);
+  background: rgba(106, 255, 182, 0.08);
+}
+
+.ui-status--err {
+  color: var(--err);
+  border-color: rgba(255, 107, 107, 0.3);
+  background: rgba(255, 107, 107, 0.1);
+}
+
+.ui-modes {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ui-mode-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.ui-mode-btn:hover {
+  color: var(--fg);
+}
+
+.ui-mode-btn.active {
+  background: var(--accent);
+  color: #001a26;
+}
+
+.ui-fatal {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  text-align: center;
+  color: var(--err);
+  font-size: 16px;
+}
+
+@media (max-width: 640px) {
+  .ui-title {
+    font-size: 16px;
+  }
+  .ui-mode-btn {
+    padding: 7px 12px;
+    font-size: 12px;
+  }
+}
