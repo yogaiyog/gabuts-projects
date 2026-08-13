@@ -198,6 +198,32 @@ export class Compositor {
     this.fingerFrame.setCarouselText(text);
   }
 
+  /** Set gambar carousel (effect "image-carousel" di finger frame). */
+  setImageCarousel(texture: THREE.Texture | null): void {
+    this.fingerFrame.setImageCarousel(texture);
+  }
+
+  /** Load gambar dari File → { texture, url }. URL tidak di-revoke (dipakai preview). */
+  loadImageCarouselTexture(file: File): Promise<{ texture: THREE.Texture; url: string }> {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const tex = new THREE.Texture(img);
+        tex.needsUpdate = true;
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.minFilter = THREE.LinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+        resolve({ texture: tex, url });
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("Failed to load image"));
+      };
+      img.src = url;
+    });
+  }
+
   /** Passthrough: set gambar untuk effect "image". */
   setImage(texture: THREE.Texture): void {
     this.fingerFrame.setImage(texture);

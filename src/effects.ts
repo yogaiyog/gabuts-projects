@@ -310,6 +310,19 @@ const CAROUSEL_FRAG = /* glsl */ `
   }
 `;
 
+// "Image Carousel" effect: sama seperti "image" tapi sample uImageCarouselTex
+// (array gambar, maju via pinch).
+const IMAGE_CAROUSEL_FRAG = /* glsl */ `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uImageCarouselTex;
+
+  void main() {
+    vec4 c = texture2D(uImageCarouselTex, vUv);
+    gl_FragColor = vec4(c.rgb, c.a);
+  }
+`;
+
 // Edge outline tetap pakai UV unit-square lokal (posisi border quad itu
 // sendiri), jadi TIDAK perlu diubah — biarkan pakai vUv dari uv plane.
 const EDGE_VERTEX_SHADER = /* glsl */ `
@@ -359,7 +372,7 @@ const EDGE_FRAG = /* glsl */ `
 export type EffectKind =
   | "pixelate" | "sobel-x" | "invert" | "grayscale" | "blur"
   | "emboss" | "posterize" | "threshold" | "sepia" | "sharpen" | "text"
-  | "bendera" | "image" | "carousel";
+  | "bendera" | "image" | "carousel" | "image-carousel";
 
 /** Efek yang bisa dipilih di dropdown frame — EffectKind + meta "cycle". */
 export type FrameEffect = EffectKind | "cycle";
@@ -383,7 +396,8 @@ export const EFFECTS: EffectDef[] = [
   { id: "text", label: "Text" },
   { id: "bendera", label: "Bendera" },
   { id: "image", label: "Image" },
-  { id: "carousel", label: "Carousel" },
+  { id: "carousel", label: "Text Carousel" },
+  { id: "image-carousel", label: "Image Carousel" },
 ];
 
 // Dropdown pemilih efek di tiap frame — sama seperti EFFECTS + meta "cycle".
@@ -393,8 +407,10 @@ export const FRAME_EFFECTS: { id: FrameEffect; label: string }[] = [
 ];
 
 // Sumber efek yang bisa dimasukkan ke daftar effect-cycle (dropdown editor).
-// Kecualikan "carousel" supaya tidak nesting dengan teks carousel.
-export const CYCLE_EFFECT_SOURCE: EffectDef[] = EFFECTS.filter((e) => e.id !== "carousel");
+// Kecualikan "carousel" dan "image-carousel" supaya tidak nesting.
+export const CYCLE_EFFECT_SOURCE: EffectDef[] = EFFECTS.filter(
+  (e) => e.id !== "carousel" && e.id !== "image-carousel",
+);
 
 const EFFECT_FRAG: Record<EffectKind, string> = {
   "pixelate": PIXELATE_FRAG,
@@ -411,6 +427,7 @@ const EFFECT_FRAG: Record<EffectKind, string> = {
   "bendera": BENDERA_FRAG,
   "image": IMAGE_FRAG,
   "carousel": CAROUSEL_FRAG,
+  "image-carousel": IMAGE_CAROUSEL_FRAG,
 };
 
 export interface EffectQuadOptions {
@@ -443,6 +460,7 @@ export class EffectQuad {
   private uTextColor: { value: THREE.Color };
   private uImageTex: { value: THREE.Texture };
   private uCarouselTex: { value: THREE.Texture };
+  private uImageCarouselTex: { value: THREE.Texture };
   private currentEffect: EffectKind;
   private visible = true;
 
@@ -465,6 +483,7 @@ export class EffectQuad {
     this.uTextColor = { value: new THREE.Color(0xffffff) };
     this.uImageTex = { value: makeTransparentTexture() };
     this.uCarouselTex = { value: makeTextTexture("") };
+    this.uImageCarouselTex = { value: makeTransparentTexture() };
     this.currentEffect = opts.effect;
 
     this.material = this.buildMaterial(opts.effect);
@@ -497,8 +516,9 @@ export class EffectQuad {
         uTextColor: this.uTextColor,
         uImageTex: this.uImageTex,
         uCarouselTex: this.uCarouselTex,
+        uImageCarouselTex: this.uImageCarouselTex,
       },
-      transparent: effect === "text" || effect === "image" || effect === "carousel",
+      transparent: effect === "text" || effect === "image" || effect === "carousel" || effect === "image-carousel",
       depthTest: false,
       depthWrite: false,
       side: THREE.DoubleSide,
@@ -526,6 +546,11 @@ export class EffectQuad {
     const old = this.uCarouselTex.value;
     this.uCarouselTex.value = makeTextTexture(text);
     if (old && old.dispose) old.dispose();
+  }
+
+  /** Set gambar untuk effect "image-carousel". null → texture transparan. */
+  setImageCarousel(texture: THREE.Texture | null): void {
+    this.uImageCarouselTex.value = texture ?? makeTransparentTexture();
   }
 
   /** Set warna teks (hex). */
@@ -582,6 +607,7 @@ export class EffectQuad {
     if (this.uTextTex.value && this.uTextTex.value.dispose) this.uTextTex.value.dispose();
     if (this.uImageTex.value && this.uImageTex.value.dispose) this.uImageTex.value.dispose();
     if (this.uCarouselTex.value && this.uCarouselTex.value.dispose) this.uCarouselTex.value.dispose();
+    if (this.uImageCarouselTex.value && this.uImageCarouselTex.value.dispose) this.uImageCarouselTex.value.dispose();
   }
 }
 

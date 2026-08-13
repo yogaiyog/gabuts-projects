@@ -492,11 +492,44 @@ body {
   color: var(--accent);
 }
 
+.ui-carousel-reset-btn {
+  flex: 0 0 auto;
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.4);
+  color: var(--muted);
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 140ms ease, color 140ms ease;
+}
+
+.ui-carousel-reset-btn:hover {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+
 .ui-carousel-empty {
   font-size: 12px;
   color: var(--muted);
   opacity: 0.7;
   padding: 4px 2px;
+}
+
+.ui-carousel-thumb {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .ui-smooth {

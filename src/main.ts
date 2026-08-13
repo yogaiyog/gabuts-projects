@@ -18,9 +18,9 @@ import { Camera } from "./camera.js";
 import { HandTracker } from "./handTracker.js";
 import { Compositor } from "./compositor.js";
 import { generateARPatternTexture } from "./arPattern.js";
-import { buildUI, setStatus, showModes, hideStart, setFramesVisible, showRecord, setRecording, renderCarouselList, renderCycleList, type UIMode, type FrameState, type FrameEffects } from "./ui.js";
+import { buildUI, setStatus, showModes, hideStart, setFramesVisible, showRecord, setRecording, renderCarouselList, renderCycleList, renderImageCarouselList, type UIMode, type FrameState, type FrameEffects, type ImageCarouselItemUI } from "./ui.js";
 import { CanvasRecorder, downloadBlob } from "./recorder.js";
-import { TextCarousel, EffectCycle, TwoHandPinchGate } from "./carousel.js";
+import { TextCarousel, EffectCycle, ImageCarousel, TwoHandPinchGate } from "./carousel.js";
 import type { EffectKind } from "./effects.js";
 import type { MultiHandResult } from "./handTracker.js";
 
@@ -46,9 +46,10 @@ async function bootstrap() {
   let frameState: FrameState = { thumbIndex: true, indexMiddle: true };
   let effectsState: FrameEffects = { thumbIndex: "pixelate", indexMiddle: "sobel-x" };
 
-  // ──────── Teks carousel + effect cycle + pinch (two-hand) ────────
+  // ──────── Teks carousel + effect cycle + image carousel + pinch (two-hand) ────────
   const carousel = new TextCarousel(["hai", "halo", "apakabar"]);
   const cycle = new EffectCycle(["pixelate", "sobel-x", "invert"]);
+  const imageCarousel = new ImageCarousel([]);
   const pinchGate = new TwoHandPinchGate();
 
   function resolveEffects(state: FrameEffects): { thumbIndex: EffectKind; indexMiddle: EffectKind } {
@@ -70,6 +71,13 @@ async function bootstrap() {
 
   function syncCycle(): void {
     renderCycleList(ui, cycle.items, cycle.getIndex());
+  }
+
+  function syncImageCarousel(): void {
+    const cur = imageCarousel.current();
+    compositor.setImageCarousel(cur?.texture ?? null);
+    const uiItems: ImageCarouselItemUI[] = imageCarousel.items.map((it) => ({ url: it.url, name: it.name }));
+    renderImageCarouselList(ui, uiItems, imageCarousel.getIndex());
   }
 
   const recorder = new CanvasRecorder();
@@ -127,6 +135,30 @@ async function bootstrap() {
       applyEffects();
       syncCycle();
     },
+    onImageCarouselAdd: (file: File) => {
+      compositor.loadImageCarouselTexture(file).then(({ texture, url }) => {
+        const name = file.name.replace(/\.[^.]+$/, "");
+        imageCarousel.add({ texture, url, name });
+        syncImageCarousel();
+      }).catch((err) => console.error("Failed to load image carousel:", err));
+    },
+    onImageCarouselRemove: (index: number) => {
+      imageCarousel.remove(index);
+      syncImageCarousel();
+    },
+    onCarouselReset: () => {
+      carousel.reset();
+      syncCarousel();
+    },
+    onCycleReset: () => {
+      cycle.reset();
+      applyEffects();
+      syncCycle();
+    },
+    onImageCarouselReset: () => {
+      imageCarousel.reset();
+      syncImageCarousel();
+    },
     onStart: () => {
       void startCamera();
     },
@@ -138,6 +170,7 @@ async function bootstrap() {
   setFramesVisible(ui, DEFAULT_MODE === "frame");
   syncCarousel();
   syncCycle();
+  syncImageCarousel();
 
   // Load gambar default untuk effect "image".
   compositor.loadImageFromUrl("/juaraku-text-2.png");
@@ -210,9 +243,11 @@ async function bootstrap() {
           if (pinchGate.update(h1, h2)) {
             carousel.next();
             cycle.next();
+            imageCarousel.next();
             syncCarousel();
             applyEffects();
             syncCycle();
+            syncImageCarousel();
           }
         }
 

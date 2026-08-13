@@ -19,6 +19,7 @@
 
 import type { Pt2 } from "./handTracker.js";
 import type { EffectKind } from "./effects.js";
+import type { Texture } from "three";
 
 const LOG_INTERVAL_MS = 400;
 
@@ -62,6 +63,11 @@ export class Carousel<T> {
     this.index = (this.index + 1) % this.items.length;
     return this.current();
   }
+
+  /** Reset index kembali ke 0. */
+  reset(): void {
+    this.index = 0;
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -76,6 +82,14 @@ export class TextCarousel extends Carousel<string> {
 }
 
 export class EffectCycle extends Carousel<EffectKind> {}
+
+export interface ImageCarouselItem {
+  texture: Texture;
+  url: string;
+  name: string;
+}
+
+export class ImageCarousel extends Carousel<ImageCarouselItem> {}
 
 // ──────────────────────────────────────────────────────────────────────
 // TwoHandPinchGate — hitung jarak pinch antar dua tangan + debounce advance

@@ -44,6 +44,9 @@ export interface UIElements {
   cycleRowEl: HTMLElement;
   cycleListEl: HTMLElement;
   cycleSelectEl: HTMLSelectElement;
+  imageCarouselRowEl: HTMLElement;
+  imageCarouselListEl: HTMLElement;
+  imageCarouselInputEl: HTMLInputElement;
 }
 
 const MODE_LABELS: Record<UIMode, string> = {
@@ -69,9 +72,14 @@ export function buildUI(opts: {
   onCarouselRemove: (index: number) => void;
   onCycleAdd: (effect: EffectKind) => void;
   onCycleRemove: (index: number) => void;
+  onImageCarouselAdd: (file: File) => void;
+  onImageCarouselRemove: (index: number) => void;
+  onCarouselReset: () => void;
+  onCycleReset: () => void;
+  onImageCarouselReset: () => void;
   onStart: () => void;
 }): UIElements {
-  const { parent, onModeChange, onFramesChange, onEffectsChange, onTextChange, onSmoothChange, onImageUpload, onRecordToggle, onCarouselAdd, onCarouselRemove, onCycleAdd, onCycleRemove, onStart } = opts;
+  const { parent, onModeChange, onFramesChange, onEffectsChange, onTextChange, onSmoothChange, onImageUpload, onRecordToggle, onCarouselAdd, onCarouselRemove, onCycleAdd, onCycleRemove, onImageCarouselAdd, onImageCarouselRemove, onCarouselReset, onCycleReset, onImageCarouselReset, onStart } = opts;
 
   const effectOptions = FRAME_EFFECTS.map((e) => `<option value="${e.id}">${e.label}</option>`).join("");
   const cycleOptions = CYCLE_EFFECT_SOURCE.map((e) => `<option value="${e.id}">${e.label}</option>`).join("");
@@ -128,13 +136,14 @@ export function buildUI(opts: {
               </label>
               <div class="ui-carousel-row" id="ui-carousel-row" hidden>
                 <div class="ui-carousel-head">
-                  <span>Carousel</span>
+                  <span>Text Carousel</span>
                   <span class="ui-carousel-hint">pinch → next</span>
                 </div>
                 <div id="ui-carousel-list" class="ui-carousel-list"></div>
                 <div class="ui-carousel-add">
                   <input id="ui-carousel-input" class="ui-carousel-input" type="text" placeholder="Add text…" />
                   <button id="ui-carousel-add" class="ui-carousel-add-btn" title="Add">+</button>
+                  <button id="ui-carousel-reset" class="ui-carousel-reset-btn" title="Reset index">↺</button>
                 </div>
               </div>
               <div class="ui-carousel-row" id="ui-cycle-row" hidden>
@@ -146,6 +155,18 @@ export function buildUI(opts: {
                 <div class="ui-carousel-add">
                   <select id="ui-cycle-select" class="ui-effect-select">${cycleOptions}</select>
                   <button id="ui-cycle-add" class="ui-carousel-add-btn" title="Add">+</button>
+                  <button id="ui-cycle-reset" class="ui-carousel-reset-btn" title="Reset index">↺</button>
+                </div>
+              </div>
+              <div class="ui-carousel-row" id="ui-image-carousel-row" hidden>
+                <div class="ui-carousel-head">
+                  <span>Image Carousel</span>
+                  <span class="ui-carousel-hint">pinch → next</span>
+                </div>
+                <div id="ui-image-carousel-list" class="ui-carousel-list"></div>
+                <div class="ui-carousel-add">
+                  <input id="ui-image-carousel-input" class="ui-carousel-input" type="file" accept="image/*" />
+                  <button id="ui-image-carousel-reset" class="ui-carousel-reset-btn" title="Reset index">↺</button>
                 </div>
               </div>
               <label class="ui-effect-row">
@@ -183,6 +204,12 @@ export function buildUI(opts: {
   const cycleListEl = parent.querySelector<HTMLElement>("#ui-cycle-list")!;
   const cycleSelectEl = parent.querySelector<HTMLSelectElement>("#ui-cycle-select")!;
   const cycleAddBtn = parent.querySelector<HTMLElement>("#ui-cycle-add")!;
+  const imageCarouselRowEl = parent.querySelector<HTMLElement>("#ui-image-carousel-row")!;
+  const imageCarouselListEl = parent.querySelector<HTMLElement>("#ui-image-carousel-list")!;
+  const imageCarouselInputEl = parent.querySelector<HTMLInputElement>("#ui-image-carousel-input")!;
+  const carouselResetBtn = parent.querySelector<HTMLElement>("#ui-carousel-reset")!;
+  const cycleResetBtn = parent.querySelector<HTMLElement>("#ui-cycle-reset")!;
+  const imageCarouselResetBtn = parent.querySelector<HTMLElement>("#ui-image-carousel-reset")!;
 
   startBtn.addEventListener("click", () => {
     onStart();
@@ -220,6 +247,21 @@ export function buildUI(opts: {
     const idx = Number(btn.dataset.index);
     if (!Number.isNaN(idx)) onCycleRemove(idx);
   });
+
+  imageCarouselInputEl.addEventListener("change", () => {
+    const file = imageCarouselInputEl.files?.[0];
+    if (file) onImageCarouselAdd(file);
+  });
+  imageCarouselListEl.addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>(".ui-carousel-remove");
+    if (!btn) return;
+    const idx = Number(btn.dataset.index);
+    if (!Number.isNaN(idx)) onImageCarouselRemove(idx);
+  });
+
+  carouselResetBtn.addEventListener("click", () => onCarouselReset());
+  cycleResetBtn.addEventListener("click", () => onCycleReset());
+  imageCarouselResetBtn.addEventListener("click", () => onImageCarouselReset());
 
   modeSelect.addEventListener("change", () => {
     onModeChange(modeSelect.value as UIMode);
@@ -268,6 +310,7 @@ export function buildUI(opts: {
     imageRowEl.hidden = !(s1 === "image" || s2 === "image");
     carouselRowEl.hidden = !(s1 === "carousel" || s2 === "carousel");
     cycleRowEl.hidden = !(s1 === "cycle" || s2 === "cycle");
+    imageCarouselRowEl.hidden = !(s1 === "image-carousel" || s2 === "image-carousel");
   }
 
   return {
@@ -285,6 +328,9 @@ export function buildUI(opts: {
     cycleRowEl,
     cycleListEl,
     cycleSelectEl,
+    imageCarouselRowEl,
+    imageCarouselListEl,
+    imageCarouselInputEl,
   };
 }
 
@@ -334,6 +380,28 @@ export function renderCycleList(ui: UIElements, items: EffectKind[], activeIndex
       (id, i) => `
         <div class="ui-carousel-item${i === activeIndex ? " active" : ""}">
           <span class="ui-carousel-text">${escapeHtml(labelOf(id))}</span>
+          <button class="ui-carousel-remove" data-index="${i}" title="Remove">−</button>
+        </div>`,
+    )
+    .join("");
+}
+
+export interface ImageCarouselItemUI {
+  url: string;
+  name: string;
+}
+
+export function renderImageCarouselList(ui: UIElements, items: ImageCarouselItemUI[], activeIndex: number): void {
+  if (items.length === 0) {
+    ui.imageCarouselListEl.innerHTML = '<div class="ui-carousel-empty">No images — select below</div>';
+    return;
+  }
+  ui.imageCarouselListEl.innerHTML = items
+    .map(
+      (item, i) => `
+        <div class="ui-carousel-item${i === activeIndex ? " active" : ""}">
+          <img class="ui-carousel-thumb" src="${item.url}" alt="${escapeHtml(item.name)}" />
+          <span class="ui-carousel-text">${escapeHtml(item.name)}</span>
           <button class="ui-carousel-remove" data-index="${i}" title="Remove">−</button>
         </div>`,
     )
