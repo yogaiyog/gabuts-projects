@@ -18,8 +18,10 @@ import { Camera } from "./camera.js";
 import { HandTracker } from "./handTracker.js";
 import { Compositor } from "./compositor.js";
 import { generateARPatternTexture } from "./arPattern.js";
-import { buildUI, setStatus, showModes, hideStart, setFramesVisible, showRecord, setRecording, type UIMode, type FrameState, type FrameEffects } from "./ui.js";
+import { buildUI, setStatus, showModes, hideStart, setFramesVisible, showRecord, setRecording, renderCarouselList, renderCycleList, type UIMode, type FrameState, type FrameEffects } from "./ui.js";
 import { CanvasRecorder, downloadBlob } from "./recorder.js";
+import { TextCarousel, EffectCycle, TwoHandPinchGate } from "./carousel.js";
+import type { EffectKind } from "./effects.js";
 import type { MultiHandResult } from "./handTracker.js";
 
 const DEFAULT_MODE: UIMode = "frame";
@@ -43,6 +45,33 @@ async function bootstrap() {
   let currentMode: UIMode = DEFAULT_MODE;
   let frameState: FrameState = { thumbIndex: true, indexMiddle: true };
   let effectsState: FrameEffects = { thumbIndex: "pixelate", indexMiddle: "sobel-x" };
+
+  // ──────── Teks carousel + effect cycle + pinch (two-hand) ────────
+  const carousel = new TextCarousel(["hai", "halo", "apakabar"]);
+  const cycle = new EffectCycle(["pixelate", "sobel-x", "invert"]);
+  const pinchGate = new TwoHandPinchGate();
+
+  function resolveEffects(state: FrameEffects): { thumbIndex: EffectKind; indexMiddle: EffectKind } {
+    const cur = cycle.current() ?? "pixelate";
+    return {
+      thumbIndex: state.thumbIndex === "cycle" ? cur : state.thumbIndex,
+      indexMiddle: state.indexMiddle === "cycle" ? cur : state.indexMiddle,
+    };
+  }
+
+  function applyEffects(): void {
+    compositor.setEffects(resolveEffects(effectsState));
+  }
+
+  function syncCarousel(): void {
+    compositor.setCarouselText(carousel.current());
+    renderCarouselList(ui, carousel.items, carousel.getIndex());
+  }
+
+  function syncCycle(): void {
+    renderCycleList(ui, cycle.items, cycle.getIndex());
+  }
+
   const recorder = new CanvasRecorder();
   const ui = buildUI({
     parent: overlay,
@@ -58,7 +87,7 @@ async function bootstrap() {
     },
     onEffectsChange: (state: FrameEffects) => {
       effectsState = state;
-      compositor.setEffects(state);
+      applyEffects();
     },
     onTextChange: (text: string) => {
       compositor.setText(text);
@@ -80,6 +109,24 @@ async function bootstrap() {
         setRecording(ui, true);
       }
     },
+    onCarouselAdd: (text: string) => {
+      carousel.add(text);
+      syncCarousel();
+    },
+    onCarouselRemove: (index: number) => {
+      carousel.remove(index);
+      syncCarousel();
+    },
+    onCycleAdd: (effect: EffectKind) => {
+      cycle.add(effect);
+      applyEffects();
+      syncCycle();
+    },
+    onCycleRemove: (index: number) => {
+      cycle.remove(index);
+      applyEffects();
+      syncCycle();
+    },
     onStart: () => {
       void startCamera();
     },
@@ -87,8 +134,10 @@ async function bootstrap() {
 
   compositor.setMode(DEFAULT_MODE);
   compositor.setFrames(frameState);
-  compositor.setEffects(effectsState);
+  applyEffects();
   setFramesVisible(ui, DEFAULT_MODE === "frame");
+  syncCarousel();
+  syncCycle();
 
   // Load gambar default untuk effect "image".
   compositor.loadImageFromUrl("/juaraku-text-2.png");
@@ -153,6 +202,20 @@ async function bootstrap() {
         const ts = performance.now();
         const hands = tracker?.detect(camera!.video, ts) ?? lastHandsResult;
         lastHandsResult = hands;
+
+        // Carousel pinch: butuh 2 tangan. Sort seperti fingerFrame (h1 = kiri layar).
+        if (hands.numDetected >= 2) {
+          let [h1, h2] = [hands.hands[0], hands.hands[1]];
+          if (h1.palmCenter.x < h2.palmCenter.x) [h1, h2] = [h2, h1];
+          if (pinchGate.update(h1, h2)) {
+            carousel.next();
+            cycle.next();
+            syncCarousel();
+            applyEffects();
+            syncCycle();
+          }
+        }
+
         compositor.render(hands, timeSec);
 
         // Status message update — throttled to avoid DOM thrash

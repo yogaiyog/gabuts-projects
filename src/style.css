@@ -369,6 +369,136 @@ body {
   border-color: var(--accent-dim);
 }
 
+.ui-carousel-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ui-carousel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.ui-carousel-head > span:first-child {
+  flex: 0 0 92px;
+  text-align: left;
+}
+
+.ui-carousel-hint {
+  font-size: 10px;
+  color: var(--muted);
+  opacity: 0.7;
+  letter-spacing: 0.2px;
+}
+
+.ui-carousel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.ui-carousel-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.ui-carousel-item.active {
+  background: rgba(106, 214, 255, 0.18);
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+
+.ui-carousel-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-carousel-remove {
+  flex: 0 0 auto;
+  appearance: none;
+  border: none;
+  background: rgba(255, 255, 255, 0.10);
+  color: var(--fg);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.ui-carousel-remove:hover {
+  background: var(--err);
+  color: #fff;
+}
+
+.ui-carousel-add {
+  display: flex;
+  gap: 6px;
+}
+
+.ui-carousel-input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: var(--fg);
+  font-size: 13px;
+  padding: 6px 10px;
+}
+
+.ui-carousel-input:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+}
+
+.ui-carousel-add-btn {
+  flex: 0 0 auto;
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(0, 0, 0, 0.4);
+  color: var(--fg);
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 140ms ease, color 140ms ease;
+}
+
+.ui-carousel-add-btn:hover {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+
+.ui-carousel-empty {
+  font-size: 12px;
+  color: var(--muted);
+  opacity: 0.7;
+  padding: 4px 2px;
+}
+
 .ui-smooth {
   flex: 1;
   appearance: none;

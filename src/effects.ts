@@ -295,6 +295,21 @@ const IMAGE_FRAG = /* glsl */ `
   }
 `;
 
+// "Carousel" effect: sama persis seperti "text" (teks alpha mask + tint warna,
+// latar transparan), tapi teksnya datang dari array carousel yang maju via
+// two-hand pinch. Sample uCarouselTex supaya independen dari "text" input.
+const CAROUSEL_FRAG = /* glsl */ `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uCarouselTex;
+  uniform vec3 uTextColor;
+
+  void main() {
+    float a = texture2D(uCarouselTex, vUv).a;
+    gl_FragColor = vec4(uTextColor, a);
+  }
+`;
+
 // Edge outline tetap pakai UV unit-square lokal (posisi border quad itu
 // sendiri), jadi TIDAK perlu diubah — biarkan pakai vUv dari uv plane.
 const EDGE_VERTEX_SHADER = /* glsl */ `
@@ -344,7 +359,10 @@ const EDGE_FRAG = /* glsl */ `
 export type EffectKind =
   | "pixelate" | "sobel-x" | "invert" | "grayscale" | "blur"
   | "emboss" | "posterize" | "threshold" | "sepia" | "sharpen" | "text"
-  | "bendera" | "image";
+  | "bendera" | "image" | "carousel";
+
+/** Efek yang bisa dipilih di dropdown frame — EffectKind + meta "cycle". */
+export type FrameEffect = EffectKind | "cycle";
 
 export interface EffectDef {
   id: EffectKind;
@@ -365,7 +383,18 @@ export const EFFECTS: EffectDef[] = [
   { id: "text", label: "Text" },
   { id: "bendera", label: "Bendera" },
   { id: "image", label: "Image" },
+  { id: "carousel", label: "Carousel" },
 ];
+
+// Dropdown pemilih efek di tiap frame — sama seperti EFFECTS + meta "cycle".
+export const FRAME_EFFECTS: { id: FrameEffect; label: string }[] = [
+  ...EFFECTS,
+  { id: "cycle", label: "Effect Cycle" },
+];
+
+// Sumber efek yang bisa dimasukkan ke daftar effect-cycle (dropdown editor).
+// Kecualikan "carousel" supaya tidak nesting dengan teks carousel.
+export const CYCLE_EFFECT_SOURCE: EffectDef[] = EFFECTS.filter((e) => e.id !== "carousel");
 
 const EFFECT_FRAG: Record<EffectKind, string> = {
   "pixelate": PIXELATE_FRAG,
@@ -381,6 +410,7 @@ const EFFECT_FRAG: Record<EffectKind, string> = {
   "text": TEXT_FRAG,
   "bendera": BENDERA_FRAG,
   "image": IMAGE_FRAG,
+  "carousel": CAROUSEL_FRAG,
 };
 
 export interface EffectQuadOptions {
@@ -412,6 +442,7 @@ export class EffectQuad {
   private uTextTex: { value: THREE.Texture };
   private uTextColor: { value: THREE.Color };
   private uImageTex: { value: THREE.Texture };
+  private uCarouselTex: { value: THREE.Texture };
   private currentEffect: EffectKind;
   private visible = true;
 
@@ -433,6 +464,7 @@ export class EffectQuad {
     this.uTextTex = { value: makeTextTexture("") };
     this.uTextColor = { value: new THREE.Color(0xffffff) };
     this.uImageTex = { value: makeTransparentTexture() };
+    this.uCarouselTex = { value: makeTextTexture("") };
     this.currentEffect = opts.effect;
 
     this.material = this.buildMaterial(opts.effect);
@@ -464,8 +496,9 @@ export class EffectQuad {
         uTextTex: this.uTextTex,
         uTextColor: this.uTextColor,
         uImageTex: this.uImageTex,
+        uCarouselTex: this.uCarouselTex,
       },
-      transparent: effect === "text" || effect === "image",
+      transparent: effect === "text" || effect === "image" || effect === "carousel",
       depthTest: false,
       depthWrite: false,
       side: THREE.DoubleSide,
@@ -485,6 +518,13 @@ export class EffectQuad {
   setText(text: string): void {
     const old = this.uTextTex.value;
     this.uTextTex.value = makeTextTexture(text);
+    if (old && old.dispose) old.dispose();
+  }
+
+  /** Set teks untuk effect "carousel" (regenerate CanvasTexture). */
+  setCarouselText(text: string): void {
+    const old = this.uCarouselTex.value;
+    this.uCarouselTex.value = makeTextTexture(text);
     if (old && old.dispose) old.dispose();
   }
 
@@ -541,6 +581,7 @@ export class EffectQuad {
     this.material.dispose();
     if (this.uTextTex.value && this.uTextTex.value.dispose) this.uTextTex.value.dispose();
     if (this.uImageTex.value && this.uImageTex.value.dispose) this.uImageTex.value.dispose();
+    if (this.uCarouselTex.value && this.uCarouselTex.value.dispose) this.uCarouselTex.value.dispose();
   }
 }
 
@@ -754,7 +795,7 @@ function makeTransparentTexture(): THREE.CanvasTexture {
  * lebar canvas (shrink font). Dipakai oleh effect "text" sebagai alpha mask
  * (warna final di-tint oleh uTextColor).
  */
-function makeTextTexture(text: string): THREE.CanvasTexture {
+export function makeTextTexture(text: string): THREE.CanvasTexture {
   const size = 512;
   const cv = document.createElement("canvas");
   cv.width = size;

@@ -164,6 +164,12 @@ export class FingerFrameCompositor {
     this.sobelQuad.setText(text);
   }
 
+  /** Set teks untuk effect "carousel" (dipakai saat efek frame = "carousel"). */
+  setCarouselText(text: string): void {
+    this.pixQuad.setCarouselText(text);
+    this.sobelQuad.setCarouselText(text);
+  }
+
   /** Set gambar untuk effect "image". */
   setImage(texture: THREE.Texture): void {
     this.pixQuad.setImage(texture);

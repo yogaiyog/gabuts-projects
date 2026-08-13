@@ -193,6 +193,11 @@ export class Compositor {
     this.fingerFrame.setText(text);
   }
 
+  /** Set teks carousel (effect "carousel" di finger frame). */
+  setCarouselText(text: string): void {
+    this.fingerFrame.setCarouselText(text);
+  }
+
   /** Passthrough: set gambar untuk effect "image". */
   setImage(texture: THREE.Texture): void {
     this.fingerFrame.setImage(texture);

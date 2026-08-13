@@ -15,7 +15,7 @@
  *   - Text input (untuk effect "text")
  */
 
-import { EFFECTS, type EffectKind } from "./effects.js";
+import { EFFECTS, FRAME_EFFECTS, CYCLE_EFFECT_SOURCE, type EffectKind, type FrameEffect } from "./effects.js";
 
 export type UIMode = "2d" | "3d" | "hybrid" | "frame";
 
@@ -25,8 +25,8 @@ export interface FrameState {
 }
 
 export interface FrameEffects {
-  thumbIndex: EffectKind;
-  indexMiddle: EffectKind;
+  thumbIndex: FrameEffect;
+  indexMiddle: FrameEffect;
 }
 
 export interface UIElements {
@@ -38,6 +38,12 @@ export interface UIElements {
   textEl: HTMLInputElement;
   startBtn: HTMLElement;
   recordBtn: HTMLElement;
+  carouselRowEl: HTMLElement;
+  carouselListEl: HTMLElement;
+  carouselInputEl: HTMLInputElement;
+  cycleRowEl: HTMLElement;
+  cycleListEl: HTMLElement;
+  cycleSelectEl: HTMLSelectElement;
 }
 
 const MODE_LABELS: Record<UIMode, string> = {
@@ -59,11 +65,16 @@ export function buildUI(opts: {
   onSmoothChange: (value: number) => void;
   onImageUpload: (file: File) => void;
   onRecordToggle: () => void;
+  onCarouselAdd: (text: string) => void;
+  onCarouselRemove: (index: number) => void;
+  onCycleAdd: (effect: EffectKind) => void;
+  onCycleRemove: (index: number) => void;
   onStart: () => void;
 }): UIElements {
-  const { parent, onModeChange, onFramesChange, onEffectsChange, onTextChange, onSmoothChange, onImageUpload, onRecordToggle, onStart } = opts;
+  const { parent, onModeChange, onFramesChange, onEffectsChange, onTextChange, onSmoothChange, onImageUpload, onRecordToggle, onCarouselAdd, onCarouselRemove, onCycleAdd, onCycleRemove, onStart } = opts;
 
-  const effectOptions = EFFECTS.map((e) => `<option value="${e.id}">${e.label}</option>`).join("");
+  const effectOptions = FRAME_EFFECTS.map((e) => `<option value="${e.id}">${e.label}</option>`).join("");
+  const cycleOptions = CYCLE_EFFECT_SOURCE.map((e) => `<option value="${e.id}">${e.label}</option>`).join("");
   const modeOptions = MODE_ORDER.map(
     (m) => `<option value="${m}" ${m === DEFAULT_MODE ? "selected" : ""}>${MODE_LABELS[m]}</option>`,
   ).join("");
@@ -115,6 +126,28 @@ export function buildUI(opts: {
                 <span>Image</span>
                 <input id="ui-image-input" class="ui-image-input" type="file" accept="image/*" />
               </label>
+              <div class="ui-carousel-row" id="ui-carousel-row" hidden>
+                <div class="ui-carousel-head">
+                  <span>Carousel</span>
+                  <span class="ui-carousel-hint">pinch → next</span>
+                </div>
+                <div id="ui-carousel-list" class="ui-carousel-list"></div>
+                <div class="ui-carousel-add">
+                  <input id="ui-carousel-input" class="ui-carousel-input" type="text" placeholder="Add text…" />
+                  <button id="ui-carousel-add" class="ui-carousel-add-btn" title="Add">+</button>
+                </div>
+              </div>
+              <div class="ui-carousel-row" id="ui-cycle-row" hidden>
+                <div class="ui-carousel-head">
+                  <span>Effect Cycle</span>
+                  <span class="ui-carousel-hint">pinch → next</span>
+                </div>
+                <div id="ui-cycle-list" class="ui-carousel-list"></div>
+                <div class="ui-carousel-add">
+                  <select id="ui-cycle-select" class="ui-effect-select">${cycleOptions}</select>
+                  <button id="ui-cycle-add" class="ui-carousel-add-btn" title="Add">+</button>
+                </div>
+              </div>
               <label class="ui-effect-row">
                 <span>Smooth</span>
                 <input id="ui-smooth" class="ui-smooth" type="range" min="0" max="100" value="50" />
@@ -142,6 +175,14 @@ export function buildUI(opts: {
   const imageInputEl = parent.querySelector<HTMLInputElement>("#ui-image-input")!;
   const startBtn = parent.querySelector<HTMLElement>("#ui-start")!;
   const recordBtn = parent.querySelector<HTMLElement>("#ui-record")!;
+  const carouselRowEl = parent.querySelector<HTMLElement>("#ui-carousel-row")!;
+  const carouselListEl = parent.querySelector<HTMLElement>("#ui-carousel-list")!;
+  const carouselInputEl = parent.querySelector<HTMLInputElement>("#ui-carousel-input")!;
+  const carouselAddBtn = parent.querySelector<HTMLElement>("#ui-carousel-add")!;
+  const cycleRowEl = parent.querySelector<HTMLElement>("#ui-cycle-row")!;
+  const cycleListEl = parent.querySelector<HTMLElement>("#ui-cycle-list")!;
+  const cycleSelectEl = parent.querySelector<HTMLSelectElement>("#ui-cycle-select")!;
+  const cycleAddBtn = parent.querySelector<HTMLElement>("#ui-cycle-add")!;
 
   startBtn.addEventListener("click", () => {
     onStart();
@@ -149,6 +190,35 @@ export function buildUI(opts: {
 
   recordBtn.addEventListener("click", () => {
     onRecordToggle();
+  });
+
+  function submitCarouselAdd(): void {
+    const value = carouselInputEl.value;
+    if (value.trim()) {
+      onCarouselAdd(value);
+      carouselInputEl.value = "";
+    }
+  }
+
+  carouselAddBtn.addEventListener("click", submitCarouselAdd);
+  carouselInputEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitCarouselAdd();
+  });
+  carouselListEl.addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>(".ui-carousel-remove");
+    if (!btn) return;
+    const idx = Number(btn.dataset.index);
+    if (!Number.isNaN(idx)) onCarouselRemove(idx);
+  });
+
+  cycleAddBtn.addEventListener("click", () => {
+    onCycleAdd(cycleSelectEl.value as EffectKind);
+  });
+  cycleListEl.addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>(".ui-carousel-remove");
+    if (!btn) return;
+    const idx = Number(btn.dataset.index);
+    if (!Number.isNaN(idx)) onCycleRemove(idx);
   });
 
   modeSelect.addEventListener("change", () => {
@@ -192,13 +262,30 @@ export function buildUI(opts: {
   });
 
   function updateTextRowVisibility(): void {
-    const s1 = effectsEl.querySelector<HTMLSelectElement>('[data-effect="thumbIndex"]')?.value as EffectKind;
-    const s2 = effectsEl.querySelector<HTMLSelectElement>('[data-effect="indexMiddle"]')?.value as EffectKind;
+    const s1 = effectsEl.querySelector<HTMLSelectElement>('[data-effect="thumbIndex"]')?.value as FrameEffect;
+    const s2 = effectsEl.querySelector<HTMLSelectElement>('[data-effect="indexMiddle"]')?.value as FrameEffect;
     textRowEl.hidden = !(s1 === "text" || s2 === "text");
     imageRowEl.hidden = !(s1 === "image" || s2 === "image");
+    carouselRowEl.hidden = !(s1 === "carousel" || s2 === "carousel");
+    cycleRowEl.hidden = !(s1 === "cycle" || s2 === "cycle");
   }
 
-  return { container: parent, statusEl, modesEl, framesEl, effectsEl, textEl, startBtn, recordBtn };
+  return {
+    container: parent,
+    statusEl,
+    modesEl,
+    framesEl,
+    effectsEl,
+    textEl,
+    startBtn,
+    recordBtn,
+    carouselRowEl,
+    carouselListEl,
+    carouselInputEl,
+    cycleRowEl,
+    cycleListEl,
+    cycleSelectEl,
+  };
 }
 
 export function setStatus(ui: UIElements, message: string, kind: "idle" | "loading" | "ok" | "err" = "idle"): void {
@@ -220,6 +307,56 @@ export function setRecording(ui: UIElements, recording: boolean): void {
   if (label) label.textContent = recording ? "Stop" : "Record";
 }
 
+export function renderCarouselList(ui: UIElements, items: string[], activeIndex: number): void {
+  if (items.length === 0) {
+    ui.carouselListEl.innerHTML = '<div class="ui-carousel-empty">No items — add below</div>';
+    return;
+  }
+  ui.carouselListEl.innerHTML = items
+    .map(
+      (t, i) => `
+        <div class="ui-carousel-item${i === activeIndex ? " active" : ""}">
+          <span class="ui-carousel-text">${escapeHtml(t)}</span>
+          <button class="ui-carousel-remove" data-index="${i}" title="Remove">−</button>
+        </div>`,
+    )
+    .join("");
+}
+
+export function renderCycleList(ui: UIElements, items: EffectKind[], activeIndex: number): void {
+  const labelOf = (id: EffectKind): string => EFFECT_LABELS[id] ?? id;
+  if (items.length === 0) {
+    ui.cycleListEl.innerHTML = '<div class="ui-carousel-empty">No effects — add below</div>';
+    return;
+  }
+  ui.cycleListEl.innerHTML = items
+    .map(
+      (id, i) => `
+        <div class="ui-carousel-item${i === activeIndex ? " active" : ""}">
+          <span class="ui-carousel-text">${escapeHtml(labelOf(id))}</span>
+          <button class="ui-carousel-remove" data-index="${i}" title="Remove">−</button>
+        </div>`,
+    )
+    .join("");
+}
+
+const EFFECT_LABELS: Record<EffectKind, string> = EFFECTS.reduce(
+  (acc, e) => {
+    acc[e.id] = e.label;
+    return acc;
+  },
+  {} as Record<EffectKind, string>,
+);
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export function setFramesVisible(ui: UIElements, visible: boolean): void {
   ui.framesEl.hidden = !visible;
   ui.effectsEl.hidden = !visible;
@@ -236,7 +373,7 @@ function readFrameState(framesEl: HTMLElement): FrameState {
 }
 
 function readEffectsState(effectsEl: HTMLElement): FrameEffects {
-  const thumbIndex = (effectsEl.querySelector<HTMLSelectElement>('[data-effect="thumbIndex"]')?.value ?? "pixelate") as EffectKind;
-  const indexMiddle = (effectsEl.querySelector<HTMLSelectElement>('[data-effect="indexMiddle"]')?.value ?? "sobel-x") as EffectKind;
+  const thumbIndex = (effectsEl.querySelector<HTMLSelectElement>('[data-effect="thumbIndex"]')?.value ?? "pixelate") as FrameEffect;
+  const indexMiddle = (effectsEl.querySelector<HTMLSelectElement>('[data-effect="indexMiddle"]')?.value ?? "sobel-x") as FrameEffect;
   return { thumbIndex, indexMiddle };
 }
