@@ -12,12 +12,17 @@
  */
 
 import * as THREE from "three";
-import { EffectQuad } from "./effects.js";
+import { EffectQuad, EdgeQuad, TipDots } from "./effects.js";
 import type { MultiHandResult } from "./handTracker.js";
+
+const FRAME_BLUE = 0x2776ea; // #2776EA
 
 export class FingerFrameCompositor {
   readonly pixQuad: EffectQuad;   // corner1 → pixelate
   readonly sobelQuad: EffectQuad; // corner2 → Sobel-X
+  readonly edge1: EdgeQuad;       // outline corner1 (biru transparan)
+  readonly edge2: EdgeQuad;       // outline corner2 (biru transparan)
+  readonly dots: TipDots;         // marker tiap ujung jari
 
   private visible = false;
 
@@ -36,6 +41,14 @@ export class FingerFrameCompositor {
     });
     scene.add(this.pixQuad.mesh);
 
+    this.edge1 = new EdgeQuad({
+      renderOrder: 11,
+      edgeWidthPx: 3,
+      color: FRAME_BLUE,
+      alpha: 0.55,
+    });
+    scene.add(this.edge1.mesh);
+
     this.sobelQuad = new EffectQuad({
       sourceTexture,
       effect: "sobel-x",
@@ -43,6 +56,21 @@ export class FingerFrameCompositor {
       renderOrder: 20,
     });
     scene.add(this.sobelQuad.mesh);
+
+    this.edge2 = new EdgeQuad({
+      renderOrder: 21,
+      edgeWidthPx: 3,
+      color: FRAME_BLUE,
+      alpha: 0.55,
+    });
+    scene.add(this.edge2.mesh);
+
+    this.dots = new TipDots(scene, {
+      count: 6,
+      color: FRAME_BLUE,
+      sizePx: 18,
+      renderOrder: 30,
+    });
 
     this.setVisible(false);
   }
@@ -108,7 +136,9 @@ export class FingerFrameCompositor {
       uvOf(h2.indexTip.x, h2.indexTip.y),
       uvOf(h1.indexTip.x, h1.indexTip.y),
     );
+    this.edge1.setCorners(c1BL, c1BR, c1TR, c1TL);
     this.pixQuad.setVisible(true);
+    this.edge1.setVisible(true);
 
     // ──────── corner2 = index-middle frame (TD TYPO preserved) ────────
     const c2BL = v(h1.indexTip.x, h1.indexTip.y);
@@ -122,16 +152,35 @@ export class FingerFrameCompositor {
       uvOf(h2.middleTip.x, h2.middleTip.y),
       uvOf(h1.middleDip.x, h1.middleTip.y), // ← typo dipertahankan biar konsisten dg posisi
     );
+    this.edge2.setCorners(c2BL, c2BR, c2TR, c2TL);
     this.sobelQuad.setVisible(true);
+    this.edge2.setVisible(true);
+
+    // ──────── Marker di tiap ujung jari (thumb/index/middle × 2 tangan) ────────
+    this.dots.setPositions([
+      v(h1.thumbTip.x, h1.thumbTip.y),
+      v(h1.indexTip.x, h1.indexTip.y),
+      v(h1.middleTip.x, h1.middleTip.y),
+      v(h2.thumbTip.x, h2.thumbTip.y),
+      v(h2.indexTip.x, h2.indexTip.y),
+      v(h2.middleTip.x, h2.middleTip.y),
+    ]);
+    this.dots.setVisible(true);
   }
 
   dispose(): void {
     this.pixQuad.dispose();
+    this.edge1.dispose();
     this.sobelQuad.dispose();
+    this.edge2.dispose();
+    this.dots.dispose();
   }
 
   private hideAll(): void {
     this.pixQuad.setVisible(false);
+    this.edge1.setVisible(false);
     this.sobelQuad.setVisible(false);
+    this.edge2.setVisible(false);
+    this.dots.setVisible(false);
   }
 }

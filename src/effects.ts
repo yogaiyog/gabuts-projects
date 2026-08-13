@@ -131,12 +131,19 @@ const EDGE_VERTEX_SHADER = /* glsl */ `
 const EDGE_FRAG = /* glsl */ `
   precision highp float;
   varying vec2 vUv;
-  uniform float uEdgeFrac;
+  uniform float uEdgeWidthPx;
+  uniform vec3 uEdgeColor;
+  uniform float uEdgeAlpha;
 
   void main() {
-    float d = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));
-    if (d < uEdgeFrac) {
-      gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+    // Jarak ke pinggir quad dikonversi ke pixel via fwidth (screen-space
+    // derivative) supaya ketebalan outline TETAP (fixed px) berapa pun
+    // ukuran quad / jarak tangan.
+    vec2 duv = min(vUv, 1.0 - vUv);
+    vec2 dpx = duv / max(fwidth(vUv), vec2(1e-4));
+    float d = min(dpx.x, dpx.y);
+    if (d < uEdgeWidthPx) {
+      gl_FragColor = vec4(uEdgeColor, uEdgeAlpha);
     } else {
       discard;
     }
@@ -275,7 +282,9 @@ export class EffectQuad {
 
 export interface EdgeQuadOptions {
   renderOrder?: number;
-  edgeFrac?: number; // 0..0.5
+  edgeWidthPx?: number; // ketebalan outline (fixed pixel, tipis)
+  color?: number;       // hex RGB (e.g. 0x2776EA)
+  alpha?: number;       // 0..1 (transparan)
 }
 
 export class EdgeQuad {
@@ -286,7 +295,9 @@ export class EdgeQuad {
   private uCornerBR: { value: THREE.Vector2 };
   private uCornerTR: { value: THREE.Vector2 };
   private uCornerTL: { value: THREE.Vector2 };
-  private uEdgeFrac: { value: number };
+  private uEdgeWidthPx: { value: number };
+  private uEdgeColor: { value: THREE.Color };
+  private uEdgeAlpha: { value: number };
   private visible = true;
 
   constructor(opts: EdgeQuadOptions = {}) {
@@ -294,7 +305,9 @@ export class EdgeQuad {
     this.uCornerBR = { value: new THREE.Vector2(1, -1) };
     this.uCornerTR = { value: new THREE.Vector2(1, 1) };
     this.uCornerTL = { value: new THREE.Vector2(-1, 1) };
-    this.uEdgeFrac = { value: opts.edgeFrac ?? 0.035 };
+    this.uEdgeWidthPx = { value: opts.edgeWidthPx ?? 2.0 };
+    this.uEdgeColor = { value: new THREE.Color(opts.color ?? 0xffffff) };
+    this.uEdgeAlpha = { value: opts.alpha ?? 1.0 };
 
     this.material = new THREE.ShaderMaterial({
       vertexShader: EDGE_VERTEX_SHADER,
@@ -304,9 +317,11 @@ export class EdgeQuad {
         uCornerBR: this.uCornerBR,
         uCornerTR: this.uCornerTR,
         uCornerTL: this.uCornerTL,
-        uEdgeFrac: this.uEdgeFrac,
+        uEdgeWidthPx: this.uEdgeWidthPx,
+        uEdgeColor: this.uEdgeColor,
+        uEdgeAlpha: this.uEdgeAlpha,
       },
-      transparent: false,
+      transparent: true,
       depthTest: false,
       depthWrite: false,
       side: THREE.DoubleSide,
@@ -325,8 +340,13 @@ export class EdgeQuad {
     this.uCornerTL.value.copy(tl);
   }
 
-  setEdgeWidth(frac: number): void {
-    this.uEdgeFrac.value = Math.max(0, Math.min(0.5, frac));
+  setColor(color: number, alpha: number): void {
+    this.uEdgeColor.value.setHex(color);
+    this.uEdgeAlpha.value = Math.max(0, Math.min(1, alpha));
+  }
+
+  setEdgeWidthPx(px: number): void {
+    this.uEdgeWidthPx.value = Math.max(0.5, px);
   }
 
   setVisible(v: boolean): void {
@@ -342,4 +362,105 @@ export class EdgeQuad {
     this.mesh.geometry.dispose();
     this.material.dispose();
   }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// TipDots
+// ──────────────────────────────────────────────────────────────────────
+
+export interface TipDotsOptions {
+  count?: number;
+  color?: number;     // hex RGB (e.g. 0x2776EA)
+  sizePx?: number;    // diameter titik di layar (fixed, sizeAttenuation false)
+  renderOrder?: number;
+}
+
+/**
+ * Titik-titik bulat (marker) yang menandai ujung jari. Pakai THREE.Points
+ * + sprite lingkaran (Canvas2D radial gradient) dengan ukuran tetap di layar.
+ */
+export class TipDots {
+  readonly points: THREE.Points;
+  private material: THREE.PointsMaterial;
+  private geometry: THREE.BufferGeometry;
+  private count: number;
+  private visible = true;
+
+  constructor(scene: THREE.Scene, opts: TipDotsOptions = {}) {
+    this.count = opts.count ?? 6;
+    const sizePx = opts.sizePx ?? 18;
+    const color = opts.color ?? 0x2776ea;
+
+    const sprite = makeCircleSprite(64);
+
+    this.geometry = new THREE.BufferGeometry();
+    const positions = new Float32Array(this.count * 3);
+    this.geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+
+    this.material = new THREE.PointsMaterial({
+      size: sizePx,
+      sizeAttenuation: false,
+      map: sprite,
+      color,
+      transparent: true,
+      alphaTest: 0.01,
+      depthTest: false,
+      depthWrite: false,
+    });
+
+    this.points = new THREE.Points(this.geometry, this.material);
+    this.points.renderOrder = opts.renderOrder ?? 30;
+    this.points.frustumCulled = false;
+    scene.add(this.points);
+  }
+
+  /** Update posisi tiap titik (world coords). z default 0. */
+  setPositions(worldPts: THREE.Vector2[]): void {
+    const attr = this.geometry.getAttribute("position") as THREE.BufferAttribute;
+    for (let i = 0; i < this.count; i++) {
+      const p = worldPts[i];
+      attr.setXYZ(i, p ? p.x : 0, p ? p.y : 0, 0);
+    }
+    attr.needsUpdate = true;
+  }
+
+  setVisible(v: boolean): void {
+    this.visible = v;
+    this.points.visible = v;
+  }
+
+  isVisible(): boolean {
+    return this.visible;
+  }
+
+  dispose(): void {
+    this.geometry.dispose();
+    this.material.dispose();
+    if (this.material.map) this.material.map.dispose();
+  }
+}
+
+/**
+ * Buat sprite lingkaran (putih dg alpha radial falloff) via Canvas2D.
+ * Warna final di-tint oleh PointsMaterial.color.
+ */
+function makeCircleSprite(size: number): THREE.CanvasTexture {
+  const cv = document.createElement("canvas");
+  cv.width = size;
+  cv.height = size;
+  const ctx = cv.getContext("2d")!;
+  const r = size / 2;
+
+  const grad = ctx.createRadialGradient(r, r, 0, r, r, r);
+  grad.addColorStop(0, "rgba(255,255,255,1)");
+  grad.addColorStop(0.6, "rgba(255,255,255,1)");
+  grad.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }
