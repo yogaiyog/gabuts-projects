@@ -229,6 +229,11 @@ export class Compositor {
     this.fingerFrame.setImage(texture);
   }
 
+  /** Passthrough: set warna teks (hex string) untuk effect "text" dan "carousel". */
+  setTextColor(hex: string): void {
+    this.fingerFrame.setTextColor(hex);
+  }
+
   /** Load gambar dari URL (TextureLoader) → set sebagai gambar effect "image". */
   loadImageFromUrl(url: string): void {
     const loader = new THREE.TextureLoader();

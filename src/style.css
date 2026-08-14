@@ -369,6 +369,33 @@ body {
   border-color: var(--accent-dim);
 }
 
+.ui-text-color {
+  flex: 0 0 36px;
+  width: 36px;
+  height: 30px;
+  padding: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.ui-text-color::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.ui-text-color::-webkit-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+
+.ui-text-color::-moz-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+
 .ui-carousel-row {
   display: flex;
   flex-direction: column;
@@ -658,5 +685,9 @@ body {
   .ui-text-input {
     font-size: 16px; /* ≥16px supaya iOS tidak auto-zoom saat focus */
     padding: 8px 10px;
+  }
+  .ui-text-color {
+    width: 40px;
+    height: 34px;
   }
 }

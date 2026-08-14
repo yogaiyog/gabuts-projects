@@ -68,6 +68,7 @@ export function buildUI(opts: {
   onSmoothChange: (value: number) => void;
   onImageUpload: (file: File) => void;
   onRecordToggle: () => void;
+  onTextColorChange: (hex: string) => void;
   onCarouselAdd: (text: string) => void;
   onCarouselRemove: (index: number) => void;
   onCycleAdd: (effect: EffectKind) => void;
@@ -79,7 +80,7 @@ export function buildUI(opts: {
   onImageCarouselReset: () => void;
   onStart: () => void;
 }): UIElements {
-  const { parent, onModeChange, onFramesChange, onEffectsChange, onTextChange, onSmoothChange, onImageUpload, onRecordToggle, onCarouselAdd, onCarouselRemove, onCycleAdd, onCycleRemove, onImageCarouselAdd, onImageCarouselRemove, onCarouselReset, onCycleReset, onImageCarouselReset, onStart } = opts;
+  const { parent, onModeChange, onFramesChange, onEffectsChange, onTextChange, onSmoothChange, onImageUpload, onRecordToggle, onTextColorChange, onCarouselAdd, onCarouselRemove, onCycleAdd, onCycleRemove, onImageCarouselAdd, onImageCarouselRemove, onCarouselReset, onCycleReset, onImageCarouselReset, onStart } = opts;
 
   const effectOptions = FRAME_EFFECTS.map((e) => `<option value="${e.id}">${e.label}</option>`).join("");
   const cycleOptions = CYCLE_EFFECT_SOURCE.map((e) => `<option value="${e.id}">${e.label}</option>`).join("");
@@ -133,6 +134,10 @@ export function buildUI(opts: {
               <label class="ui-effect-row" id="ui-image-row" hidden>
                 <span>Image</span>
                 <input id="ui-image-input" class="ui-image-input" type="file" accept="image/*" />
+              </label>
+              <label class="ui-effect-row" id="ui-text-color-row" hidden>
+                <span>Warna</span>
+                <input id="ui-text-color" class="ui-text-color" type="color" value="#ffffff" />
               </label>
               <div class="ui-carousel-row" id="ui-carousel-row" hidden>
                 <div class="ui-carousel-head">
@@ -194,6 +199,8 @@ export function buildUI(opts: {
   const textEl = parent.querySelector<HTMLInputElement>("#ui-text-input")!;
   const imageRowEl = parent.querySelector<HTMLElement>("#ui-image-row")!;
   const imageInputEl = parent.querySelector<HTMLInputElement>("#ui-image-input")!;
+  const textColorRowEl = parent.querySelector<HTMLElement>("#ui-text-color-row")!;
+  const textColorEl = parent.querySelector<HTMLInputElement>("#ui-text-color")!;
   const startBtn = parent.querySelector<HTMLElement>("#ui-start")!;
   const recordBtn = parent.querySelector<HTMLElement>("#ui-record")!;
   const carouselRowEl = parent.querySelector<HTMLElement>("#ui-carousel-row")!;
@@ -290,6 +297,10 @@ export function buildUI(opts: {
     if (file) onImageUpload(file);
   });
 
+  textColorEl.addEventListener("input", () => {
+    onTextColorChange(textColorEl.value);
+  });
+
   const smoothEl = parent.querySelector<HTMLInputElement>("#ui-smooth")!;
   smoothEl.addEventListener("input", () => {
     onSmoothChange(Number(smoothEl.value));
@@ -308,6 +319,7 @@ export function buildUI(opts: {
     const s2 = effectsEl.querySelector<HTMLSelectElement>('[data-effect="indexMiddle"]')?.value as FrameEffect;
     textRowEl.hidden = !(s1 === "text" || s2 === "text");
     imageRowEl.hidden = !(s1 === "image" || s2 === "image");
+    textColorRowEl.hidden = !(s1 === "text" || s2 === "text" || s1 === "carousel" || s2 === "carousel");
     carouselRowEl.hidden = !(s1 === "carousel" || s2 === "carousel");
     cycleRowEl.hidden = !(s1 === "cycle" || s2 === "cycle");
     imageCarouselRowEl.hidden = !(s1 === "image-carousel" || s2 === "image-carousel");

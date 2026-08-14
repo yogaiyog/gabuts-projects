@@ -106,6 +106,9 @@ async function bootstrap() {
     onImageUpload: (file: File) => {
       compositor.setImageFromFile(file);
     },
+    onTextColorChange: (hex: string) => {
+      compositor.setTextColor(hex);
+    },
     onRecordToggle: () => {
       if (recorder.isRecording) {
         recorder.stop().then((blob) => {

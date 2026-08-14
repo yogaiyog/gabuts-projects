@@ -182,6 +182,13 @@ export class FingerFrameCompositor {
     this.sobelQuad.setImage(texture);
   }
 
+  /** Set warna teks (hex string) untuk effect "text" dan "carousel". */
+  setTextColor(hex: string): void {
+    const color = parseInt(hex.replace("#", ""), 16);
+    this.pixQuad.setTextColor(color);
+    this.sobelQuad.setTextColor(color);
+  }
+
   /** Set kekuatan smoothing (0..100). 0 = raw, 100 = paling smooth. */
   setSmoothing(value: number): void {
     this.smoothingValue = Math.max(0, Math.min(100, value));
