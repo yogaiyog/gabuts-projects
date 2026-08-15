@@ -203,6 +203,24 @@ export class FingerFrameCompositor {
     set(this.smoother2);
   }
 
+  /** Set warna tint overlay pada kedua frame (hex1 = frame1 thumb-index, hex2 = frame2 index-middle). */
+  setTintColor(hex1: number, hex2: number): void {
+    this.pixQuad.setTintColor(hex1);
+    this.sobelQuad.setTintColor(hex2);
+  }
+
+  /** Set intensitas tint pada kedua frame (0..1). */
+  setTintAlpha(alpha: number): void {
+    this.pixQuad.setTintAlpha(alpha);
+    this.sobelQuad.setTintAlpha(alpha);
+  }
+
+  /** Clear tint pada kedua frame (reset ke transparan). */
+  clearTint(): void {
+    this.pixQuad.clearTint();
+    this.sobelQuad.clearTint();
+  }
+
   private resetSmoothers(): void {
     const reset = (s: HandSmoother) => {
       s.thumb.reset();
@@ -234,6 +252,7 @@ export class FingerFrameCompositor {
     if (hand.numDetected < 2) {
       this.resetSmoothers();
       this.hideAll();
+      this.clearTint();
       return;
     }
 
@@ -244,10 +263,7 @@ export class FingerFrameCompositor {
       return new THREE.Vector2(wx, wy);
     };
 
-    // Texture-sample UV mapping (area video yang di-crop — BARU).
-    // Landmark: x 0..1 kiri→kanan, y 0..1 atas→bawah (image space).
-    // PlaneGeometry UV: y=0 bawah, y=1 atas → makanya y di-flip.
-    // Mirror TIDAK diterapkan di sini karena sudah dihandle uMirror di shader.
+    // Texture-sample UV mapping (area video yang di-crop).
     const uvOf = (mx: number, my: number): THREE.Vector2 => {
       return new THREE.Vector2(mx, 1.0 - my);
     };

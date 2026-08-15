@@ -18,9 +18,9 @@ import { Camera } from "./camera.js";
 import { HandTracker } from "./handTracker.js";
 import { Compositor } from "./compositor.js";
 import { generateARPatternTexture } from "./arPattern.js";
-import { buildUI, setStatus, showModes, hideStart, setFramesVisible, showRecord, setRecording, renderCarouselList, renderCycleList, renderImageCarouselList, type UIMode, type FrameState, type FrameEffects, type ImageCarouselItemUI } from "./ui.js";
-import { CanvasRecorder, downloadBlob } from "./recorder.js";
-import { TextCarousel, EffectCycle, ImageCarousel, TwoHandPinchGate } from "./carousel.js";
+import { buildUI, setStatus, showModes, hideStart, setFramesVisible, showRecord, setRecording, setProcessing, setRecordDisabled, renderCarouselList, renderCycleList, renderImageCarouselList, setEffectsUI, type UIMode, type FrameState, type FrameEffects, type ImageCarouselItemUI } from "./ui.js";
+import { CanvasRecorder, downloadBlob, warmupFFmpeg } from "./recorder.js";
+import { TextCarousel, EffectCycle, ImageCarousel, OneHandFistGate, fistScore } from "./carousel.js";
 import type { EffectKind } from "./effects.js";
 import type { MultiHandResult } from "./handTracker.js";
 
@@ -44,13 +44,15 @@ async function bootstrap() {
   // 3. UI
   let currentMode: UIMode = DEFAULT_MODE;
   let frameState: FrameState = { thumbIndex: true, indexMiddle: true };
-  let effectsState: FrameEffects = { thumbIndex: "pixelate", indexMiddle: "sobel-x" };
+  let effectsState: FrameEffects = { thumbIndex: "text", indexMiddle: "cycle" };
+  const DEFAULT_TEXT = "fist + openhand to change effect";
 
   // ──────── Teks carousel + effect cycle + image carousel + pinch (two-hand) ────────
-  const carousel = new TextCarousel(["hai", "halo", "apakabar"]);
-  const cycle = new EffectCycle(["pixelate", "sobel-x", "invert"]);
+  const carousel = new TextCarousel(["kepal untuk next effect", "tempel jari kiri dan kanan ganti teks", "jan lupa follow ya"]);
+  const cycle = new EffectCycle(["pixelate", "sobel-x", "invert", "blur"]);
   const imageCarousel = new ImageCarousel([]);
-  const pinchGate = new TwoHandPinchGate();
+  const oneFistGate = new OneHandFistGate();
+  let twoFistDebounce = false; // prevent 1-fist clear right after 2-fist release
 
   function resolveEffects(state: FrameEffects): { thumbIndex: EffectKind; indexMiddle: EffectKind } {
     const cur = cycle.current() ?? "pixelate";
@@ -81,6 +83,16 @@ async function bootstrap() {
   }
 
   const recorder = new CanvasRecorder();
+  recorder.onProgress = (percent) => {
+    setProcessing(ui, true, percent);
+  };
+  recorder.onStatusChange = (status) => {
+    if (status === "loading") {
+      setProcessing(ui, true, undefined, true);
+    } else if (status === "processing") {
+      setProcessing(ui, true);
+    }
+  };
   const ui = buildUI({
     parent: overlay,
     onModeChange: (mode: UIMode) => {
@@ -109,12 +121,27 @@ async function bootstrap() {
     onTextColorChange: (hex: string) => {
       compositor.setTextColor(hex);
     },
-    onRecordToggle: () => {
+    onRecordToggle: async () => {
+      if (recorder.isProcessing) return;
       if (recorder.isRecording) {
-        recorder.stop().then((blob) => {
-          downloadBlob(blob, `recording-${Date.now()}.${recorder.getExtension()}`);
+        setRecording(ui, false);
+        setStatus(ui, "Processing video…", "loading");
+        setProcessing(ui, true);
+        setRecordDisabled(ui, true);
+        try {
+          const blob = await recorder.stop();
+          setProcessing(ui, false);
+          setRecordDisabled(ui, false);
+          setStatus(ui, "Video ready ✓", "ok");
           setRecording(ui, false);
-        });
+          downloadBlob(blob, `recording-${Date.now()}.mp4`);
+        } catch (err) {
+          setProcessing(ui, false);
+          setRecordDisabled(ui, false);
+          const msg = err instanceof Error ? err.message : String(err);
+          setStatus(ui, `Processing failed: ${msg}`, "err");
+          setRecording(ui, false);
+        }
       } else {
         recorder.start(canvas, 30);
         setRecording(ui, true);
@@ -170,7 +197,10 @@ async function bootstrap() {
   compositor.setMode(DEFAULT_MODE);
   compositor.setFrames(frameState);
   applyEffects();
+  setEffectsUI(ui, effectsState);
   setFramesVisible(ui, DEFAULT_MODE === "frame");
+  compositor.setText(DEFAULT_TEXT);
+  ui.textEl.value = DEFAULT_TEXT;
   syncCarousel();
   syncCycle();
   syncImageCarousel();
@@ -198,6 +228,19 @@ async function bootstrap() {
   let lastHandsResult: MultiHandResult = emptyHands();
   let lastError: string | null = null;
 
+  // ──────── Rainbow Tone Color Tint ────────
+  const RAINBOW_COLORS = [
+    0xFF0000, // Red
+    0xFF7F00, // Orange
+    0xFFFF00, // Yellow
+    0x00FF00, // Green
+    0x0000FF, // Blue
+    0x4B0082, // Indigo
+    0x9400D3, // Violet
+  ];
+  let tintActive = false;
+  let prevBothFists = false;
+
   // Hidden video element for MediaPipe source + WebGL texture source
   const videoEl = document.createElement("video");
   videoEl.style.position = "absolute";
@@ -209,6 +252,9 @@ async function bootstrap() {
   async function startCamera() {
     hideStart(ui);
     setStatus(ui, "Requesting camera permission…", "loading");
+
+    // Pre-warm FFmpeg.wasm in background (loads ~31MB WASM core)
+    void warmupFFmpeg();
 
     try {
       camera = await Camera.open(videoEl, { width: 1280, height: 720 });
@@ -239,18 +285,66 @@ async function bootstrap() {
         const hands = tracker?.detect(camera!.video, ts) ?? lastHandsResult;
         lastHandsResult = hands;
 
-        // Carousel pinch: butuh 2 tangan. Sort seperti fingerFrame (h1 = kiri layar).
-        if (hands.numDetected >= 2) {
+        // ──────── Gesture logic (swapped: 1 fist = effect cycle, 2 fists = tint) ────────
+        if (currentMode === "frame" && hands.numDetected === 2) {
           let [h1, h2] = [hands.hands[0], hands.hands[1]];
           if (h1.palmCenter.x < h2.palmCenter.x) [h1, h2] = [h2, h1];
-          if (pinchGate.update(h1, h2)) {
-            carousel.next();
+
+          const s1 = fistScore(h1);
+          const s2 = fistScore(h2);
+          const oneFistOneOpen = (s1 < 0.5 && s2 > 0.7) || (s2 < 0.5 && s1 > 0.7);
+          const bothFists = s1 < 0.5 && s2 < 0.5;
+          const bothReleased = s1 > 0.7 && s2 > 0.7;
+
+          // ── 2 fists → apply random tint (latching), set debounce ──
+          if (bothFists && !prevBothFists) {
+            const shuffled = [...RAINBOW_COLORS].sort(() => Math.random() - 0.5);
+            compositor.fingerFrame.setTintColor(shuffled[0], shuffled[1]);
+            compositor.fingerFrame.setTintAlpha(0.35);
+            tintActive = true;
+            twoFistDebounce = true;
+          }
+
+          // ── Release from 2 fists → debounce ON (block 1-fist clear) ──
+          if (!bothFists && prevBothFists) {
+            // Don't clear tint, keep debounce active
+          }
+
+          // ── Both fully released → clear debounce ──
+          if (bothReleased) {
+            twoFistDebounce = false;
+          }
+
+          // ── 1 fist + 1 open (with debounce guard) ──
+          if (oneFistOneOpen && !twoFistDebounce) {
+            // Clear tint if active
+            if (tintActive) {
+              compositor.fingerFrame.clearTint();
+              tintActive = false;
+            }
+          }
+
+          prevBothFists = bothFists;
+
+        } else if (currentMode === "frame" && hands.numDetected !== 2) {
+          // Tangan berkurang (< 2) → reset tint
+          if (tintActive) {
+            compositor.fingerFrame.clearTint();
+            tintActive = false;
+          }
+          prevBothFists = false;
+          twoFistDebounce = false;
+        }
+
+        // Advance effect cycle: tepat 1 tangan mengepal (debounced via OneHandFistGate).
+        // Tidak advance carousel / imageCarousel — hanya EffectCycle.
+        if (hands.numDetected >= 2 && !twoFistDebounce) {
+          let [h1, h2] = [hands.hands[0], hands.hands[1]];
+          if (h1.palmCenter.x < h2.palmCenter.x) [h1, h2] = [h2, h1];
+          if (oneFistGate.update(h1, h2)) {
             cycle.next();
-            imageCarousel.next();
-            syncCarousel();
             applyEffects();
             syncCycle();
-            syncImageCarousel();
           }
         }
 

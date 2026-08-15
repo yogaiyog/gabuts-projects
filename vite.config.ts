@@ -32,7 +32,7 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    exclude: ["@mediapipe/tasks-vision"],
+    exclude: ["@mediapipe/tasks-vision", "@ffmpeg/ffmpeg", "@ffmpeg/util", "@ffmpeg/core-mt"],
   },
   assetsInclude: ["**/*.task"],
 });

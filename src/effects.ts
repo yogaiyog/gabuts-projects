@@ -66,6 +66,8 @@ const PIXELATE_FRAG = /* glsl */ `
   uniform float uBlockH;
   uniform float uBlockV;
   uniform float uMirror;
+  uniform vec3 uTintColor;
+  uniform float uTintAlpha;
 
   void main() {
     vec2 mirrorUv = vec2(mix(vSampleUv.x, 1.0 - vSampleUv.x, uMirror), vSampleUv.y);
@@ -73,6 +75,7 @@ const PIXELATE_FRAG = /* glsl */ `
     vec2 block = floor(px / vec2(uBlockH, uBlockV)) * vec2(uBlockH, uBlockV);
     vec2 blockCenterUV = (block + vec2(uBlockH, uBlockV) * 0.5) / uTexSize;
     vec3 c = texture2D(uTex, blockCenterUV).rgb;
+    c = mix(c, uTintColor, uTintAlpha);
     gl_FragColor = vec4(c, 1.0);
   }
 `;
@@ -83,6 +86,8 @@ const SOBELX_FRAG = /* glsl */ `
   uniform sampler2D uTex;
   uniform vec2 uTexSize;
   uniform float uMirror;
+  uniform vec3 uTintColor;
+  uniform float uTintAlpha;
 
   float sampleGray(vec2 uv) {
     vec2 m = vec2(mix(uv.x, 1.0 - uv.x, uMirror), uv.y);
@@ -106,7 +111,8 @@ const SOBELX_FRAG = /* glsl */ `
 
     float bias = 0.5;
     float g = clamp(gx + bias, 0.0, 1.0);
-    gl_FragColor = vec4(g, g, g, 1.0);
+    vec3 c = mix(vec3(g), uTintColor, uTintAlpha);
+    gl_FragColor = vec4(c, 1.0);
   }
 `;
 
@@ -121,10 +127,14 @@ const INVERT_FRAG = /* glsl */ `
   precision highp float;
   varying vec2 vSampleUv;
   uniform sampler2D uTex;
+  uniform vec3 uTintColor;
+  uniform float uTintAlpha;
 
   void main() {
     vec3 c = texture2D(uTex, vSampleUv).rgb;
-    gl_FragColor = vec4(1.0 - c, 1.0);
+    c = 1.0 - c;
+    c = mix(c, uTintColor, uTintAlpha);
+    gl_FragColor = vec4(c, 1.0);
   }
 `;
 
@@ -132,11 +142,14 @@ const GRAYSCALE_FRAG = /* glsl */ `
   precision highp float;
   varying vec2 vSampleUv;
   uniform sampler2D uTex;
+  uniform vec3 uTintColor;
+  uniform float uTintAlpha;
 
   void main() {
     vec3 c = texture2D(uTex, vSampleUv).rgb;
     float l = dot(c, vec3(0.299, 0.587, 0.114));
-    gl_FragColor = vec4(vec3(l), 1.0);
+    c = mix(vec3(l), uTintColor, uTintAlpha);
+    gl_FragColor = vec4(c, 1.0);
   }
 `;
 
@@ -145,6 +158,8 @@ const BLUR_FRAG = /* glsl */ `
   varying vec2 vSampleUv;
   uniform sampler2D uTex;
   uniform vec2 uTexSize;
+  uniform vec3 uTintColor;
+  uniform float uTintAlpha;
 
   void main() {
     vec2 px = 1.0 / uTexSize;
@@ -158,7 +173,8 @@ const BLUR_FRAG = /* glsl */ `
     sum += texture2D(uTex, vSampleUv + vec2(-px.x, -px.y)).rgb;
     sum += texture2D(uTex, vSampleUv + vec2(   0.0,-px.y)).rgb;
     sum += texture2D(uTex, vSampleUv + vec2( px.x, -px.y)).rgb;
-    gl_FragColor = vec4(sum / 9.0, 1.0);
+    vec3 c = mix(sum / 9.0, uTintColor, uTintAlpha);
+    gl_FragColor = vec4(c, 1.0);
   }
 `;
 
@@ -167,6 +183,8 @@ const EMBOSS_FRAG = /* glsl */ `
   varying vec2 vSampleUv;
   uniform sampler2D uTex;
   uniform vec2 uTexSize;
+  uniform vec3 uTintColor;
+  uniform float uTintAlpha;
 
   void main() {
     vec2 px = 1.0 / uTexSize;
@@ -179,10 +197,10 @@ const EMBOSS_FRAG = /* glsl */ `
     float b  = texture2D(uTex, vSampleUv + vec2(   0.0,-px.y)).r;
     float br = texture2D(uTex, vSampleUv + vec2( px.x, -px.y)).r;
 
-    // Emboss: -tl -t -tr -l + 4*r -bl -b -br (highlight arah kanan-bawah)
     float e = -tl - t - tr - l + 4.0 * r - bl - b - br;
     float g = clamp(e + 0.5, 0.0, 1.0);
-    gl_FragColor = vec4(vec3(g), 1.0);
+    vec3 c = mix(vec3(g), uTintColor, uTintAlpha);
+    gl_FragColor = vec4(c, 1.0);
   }
 `;
 
@@ -190,12 +208,15 @@ const POSTERIZE_FRAG = /* glsl */ `
   precision highp float;
   varying vec2 vSampleUv;
   uniform sampler2D uTex;
+  uniform vec3 uTintColor;
+  uniform float uTintAlpha;
 
   void main() {
     vec3 c = texture2D(uTex, vSampleUv).rgb;
     float levels = 8.0;
-    vec3 q = floor(c * levels) / (levels - 1.0);
-    gl_FragColor = vec4(q, 1.0);
+    c = floor(c * levels) / (levels - 1.0);
+    c = mix(c, uTintColor, uTintAlpha);
+    gl_FragColor = vec4(c, 1.0);
   }
 `;
 
@@ -203,12 +224,15 @@ const THRESHOLD_FRAG = /* glsl */ `
   precision highp float;
   varying vec2 vSampleUv;
   uniform sampler2D uTex;
+  uniform vec3 uTintColor;
+  uniform float uTintAlpha;
 
   void main() {
     vec3 c = texture2D(uTex, vSampleUv).rgb;
     float l = dot(c, vec3(0.299, 0.587, 0.114));
     float t = step(0.5, l);
-    gl_FragColor = vec4(vec3(t), 1.0);
+    vec3 col = mix(vec3(t), uTintColor, uTintAlpha);
+    gl_FragColor = vec4(col, 1.0);
   }
 `;
 
@@ -216,6 +240,8 @@ const SEPIA_FRAG = /* glsl */ `
   precision highp float;
   varying vec2 vSampleUv;
   uniform sampler2D uTex;
+  uniform vec3 uTintColor;
+  uniform float uTintAlpha;
 
   void main() {
     vec3 c = texture2D(uTex, vSampleUv).rgb;
@@ -224,7 +250,8 @@ const SEPIA_FRAG = /* glsl */ `
       0.349, 0.686, 0.168,
       0.272, 0.534, 0.131
     );
-    gl_FragColor = vec4(m * c, 1.0);
+    c = mix(m * c, uTintColor, uTintAlpha);
+    gl_FragColor = vec4(c, 1.0);
   }
 `;
 
@@ -233,6 +260,8 @@ const SHARPEN_FRAG = /* glsl */ `
   varying vec2 vSampleUv;
   uniform sampler2D uTex;
   uniform vec2 uTexSize;
+  uniform vec3 uTintColor;
+  uniform float uTintAlpha;
 
   void main() {
     vec2 px = 1.0 / uTexSize;
@@ -242,13 +271,13 @@ const SHARPEN_FRAG = /* glsl */ `
     sum += texture2D(uTex, vSampleUv + vec2( px.x,   0.0)).rgb;
     sum += texture2D(uTex, vSampleUv + vec2(   0.0,  px.y)).rgb;
     sum += texture2D(uTex, vSampleUv + vec2(   0.0, -px.y)).rgb;
-    // center weight 5x: sharpen = -4*c + 5*c = c → gunakan kernel 0 -1 0 / -1 5 -1 / 0 -1 0
     vec3 sharp = 5.0 * c
       - texture2D(uTex, vSampleUv + vec2(-px.x,   0.0)).rgb
       - texture2D(uTex, vSampleUv + vec2( px.x,   0.0)).rgb
       - texture2D(uTex, vSampleUv + vec2(   0.0,  px.y)).rgb
       - texture2D(uTex, vSampleUv + vec2(   0.0, -px.y)).rgb;
-    gl_FragColor = vec4(clamp(sharp, 0.0, 1.0), 1.0);
+    c = mix(clamp(sharp, 0.0, 1.0), uTintColor, uTintAlpha);
+    gl_FragColor = vec4(c, 1.0);
   }
 `;
 
@@ -259,12 +288,16 @@ const BENDERA_FRAG = /* glsl */ `
   varying vec2 vSampleUv;
   varying vec2 vUv;
   uniform sampler2D uTex;
+  uniform vec3 uTintColor;
+  uniform float uTintAlpha;
 
   void main() {
     vec3 c = texture2D(uTex, vSampleUv).rgb;
     vec3 flag = vUv.y > 0.5 ? vec3(1.0, 0.0, 0.0) : vec3(1.0, 1.0, 1.0);
-    float alpha = 0.5; // transparan, tidak solid
-    gl_FragColor = vec4(mix(c, flag, alpha), 1.0);
+    float alpha = 0.5;
+    c = mix(c, flag, alpha);
+    c = mix(c, uTintColor, uTintAlpha);
+    gl_FragColor = vec4(c, 1.0);
   }
 `;
 
@@ -275,10 +308,13 @@ const TEXT_FRAG = /* glsl */ `
   varying vec2 vUv;
   uniform sampler2D uTextTex;
   uniform vec3 uTextColor;
+  uniform vec3 uTintColor;
+  uniform float uTintAlpha;
 
   void main() {
     float a = texture2D(uTextTex, vUv).a;
-    gl_FragColor = vec4(uTextColor, a);
+    vec3 c = mix(uTextColor, uTintColor, uTintAlpha);
+    gl_FragColor = vec4(c, a);
   }
 `;
 
@@ -288,10 +324,13 @@ const IMAGE_FRAG = /* glsl */ `
   precision highp float;
   varying vec2 vUv;
   uniform sampler2D uImageTex;
+  uniform vec3 uTintColor;
+  uniform float uTintAlpha;
 
   void main() {
     vec4 c = texture2D(uImageTex, vUv);
-    gl_FragColor = vec4(c.rgb, c.a);
+    vec3 rgb = mix(c.rgb, uTintColor, uTintAlpha);
+    gl_FragColor = vec4(rgb, c.a);
   }
 `;
 
@@ -303,10 +342,13 @@ const CAROUSEL_FRAG = /* glsl */ `
   varying vec2 vUv;
   uniform sampler2D uCarouselTex;
   uniform vec3 uTextColor;
+  uniform vec3 uTintColor;
+  uniform float uTintAlpha;
 
   void main() {
     float a = texture2D(uCarouselTex, vUv).a;
-    gl_FragColor = vec4(uTextColor, a);
+    vec3 c = mix(uTextColor, uTintColor, uTintAlpha);
+    gl_FragColor = vec4(c, a);
   }
 `;
 
@@ -316,10 +358,13 @@ const IMAGE_CAROUSEL_FRAG = /* glsl */ `
   precision highp float;
   varying vec2 vUv;
   uniform sampler2D uImageCarouselTex;
+  uniform vec3 uTintColor;
+  uniform float uTintAlpha;
 
   void main() {
     vec4 c = texture2D(uImageCarouselTex, vUv);
-    gl_FragColor = vec4(c.rgb, c.a);
+    vec3 rgb = mix(c.rgb, uTintColor, uTintAlpha);
+    gl_FragColor = vec4(rgb, c.a);
   }
 `;
 
@@ -461,6 +506,8 @@ export class EffectQuad {
   private uImageTex: { value: THREE.Texture };
   private uCarouselTex: { value: THREE.Texture };
   private uImageCarouselTex: { value: THREE.Texture };
+  private uTintColor: { value: THREE.Color };
+  private uTintAlpha: { value: number };
   private currentEffect: EffectKind;
   private visible = true;
 
@@ -484,6 +531,8 @@ export class EffectQuad {
     this.uImageTex = { value: makeTransparentTexture() };
     this.uCarouselTex = { value: makeTextTexture("") };
     this.uImageCarouselTex = { value: makeTransparentTexture() };
+    this.uTintColor = { value: new THREE.Color(0xffffff) };
+    this.uTintAlpha = { value: 0.0 };
     this.currentEffect = opts.effect;
 
     this.material = this.buildMaterial(opts.effect);
@@ -517,6 +566,8 @@ export class EffectQuad {
         uImageTex: this.uImageTex,
         uCarouselTex: this.uCarouselTex,
         uImageCarouselTex: this.uImageCarouselTex,
+        uTintColor: this.uTintColor,
+        uTintAlpha: this.uTintAlpha,
       },
       transparent: effect === "text" || effect === "image" || effect === "carousel" || effect === "image-carousel",
       depthTest: false,
@@ -561,6 +612,21 @@ export class EffectQuad {
   /** Set gambar untuk effect "image". */
   setImage(texture: THREE.Texture): void {
     this.uImageTex.value = texture;
+  }
+
+  /** Set warna tint overlay (hex 0xRRGGBB). */
+  setTintColor(hex: number): void {
+    this.uTintColor.value.setHex(hex);
+  }
+
+  /** Set intensitas tint (0.0 = transparan, 1.0 = full tint). */
+  setTintAlpha(alpha: number): void {
+    this.uTintAlpha.value = Math.max(0, Math.min(1, alpha));
+  }
+
+  /** Clear tint (reset ke transparan). */
+  clearTint(): void {
+    this.uTintAlpha.value = 0.0;
   }
 
   /** Posisi quad di layar (world coords), ikut jari. */

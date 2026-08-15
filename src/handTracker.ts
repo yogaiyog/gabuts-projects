@@ -35,12 +35,18 @@ export const HAND_LANDMARK_NAMES = [
 // Konstanta index untuk akses cepat.
 export const LANDMARK_INDEX = {
   WRIST: 0,
+  THUMB_IP: 3,
   THUMB_TIP: 4,
   INDEX_FINGER_MCP: 5,
+  INDEX_FINGER_PIP: 6,
   INDEX_FINGER_TIP: 8,
   MIDDLE_FINGER_MCP: 9,
+  MIDDLE_FINGER_PIP: 10,
   MIDDLE_FINGER_DIP: 11,
   MIDDLE_FINGER_TIP: 12,
+  RING_FINGER_PIP: 14,
+  RING_FINGER_TIP: 16,
+  PINKY_PIP: 18,
   PINKY_TIP: 20,
 } as const;
 

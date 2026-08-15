@@ -142,3 +142,118 @@ export class TwoHandPinchGate {
 function dist(a: Pt2, b: Pt2): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// TwoHandFistGate — deteksi kedua tangan mengepal (clenched fist)
+// ──────────────────────────────────────────────────────────────────────
+
+export const TWO_HAND_FIST_THRESHOLD = 0.5;   // fist score < ini = mengepal
+export const TWO_HAND_FIST_RELEASE = 0.7;     // fist score > ini = sudah lepas (re-arm)
+const FIST_LOG_INTERVAL_MS = 400;
+
+/**
+ * Deteksi clenched fist pada satu tangan.
+ * Fist score = avg(dist(5 tips, palmCenter)) / handSize.
+ * Semakin kecil → semakin mengepal.
+ */
+export function fistScore(h: { thumbTip: Pt2; indexTip: Pt2; middleTip: Pt2; palmCenter: Pt2; handSize: number; landmarks: Pt2[] }): number {
+  if (h.handSize < 0.04) return 999; // tangan tidak terdeteksi
+
+  const tips = [
+    h.thumbTip,
+    h.indexTip,
+    h.middleTip,
+    h.landmarks[16], // ring_finger_tip
+    h.landmarks[20], // pinky_tip
+  ];
+
+  const avgDist = tips.reduce((sum, tip) => sum + dist(tip, h.palmCenter), 0) / tips.length;
+  return avgDist / h.handSize;
+}
+
+export class TwoHandFistGate {
+  private armed = true;
+  private lastLogMs = 0;
+
+  /**
+   * Cek apakah kedua tangan mengepal. Return true bila harus advance
+   * (kedua fist terdeteksi dan gate sudah di-release).
+   */
+  update(h1: { thumbTip: Pt2; indexTip: Pt2; middleTip: Pt2; palmCenter: Pt2; handSize: number; landmarks: Pt2[] },
+         h2: { thumbTip: Pt2; indexTip: Pt2; middleTip: Pt2; palmCenter: Pt2; handSize: number; landmarks: Pt2[] }): boolean {
+    const s1 = fistScore(h1);
+    const s2 = fistScore(h2);
+
+    this.log(s1, s2);
+
+    const bothFists = s1 < TWO_HAND_FIST_THRESHOLD && s2 < TWO_HAND_FIST_THRESHOLD;
+    const bothReleased = s1 > TWO_HAND_FIST_RELEASE && s2 > TWO_HAND_FIST_RELEASE;
+
+    let advance = false;
+    if (bothFists) {
+      if (this.armed) {
+        advance = true;
+        this.armed = false;
+      }
+    } else if (bothReleased) {
+      this.armed = true;
+    }
+
+    return advance;
+  }
+
+  private log(s1: number, s2: number): void {
+    const now = performance.now();
+    if (now - this.lastLogMs < FIST_LOG_INTERVAL_MS) return;
+    this.lastLogMs = now;
+    console.log(
+      `[fist] s1=${s1.toFixed(3)} s2=${s2.toFixed(3)} (threshold=${TWO_HAND_FIST_THRESHOLD} release=${TWO_HAND_FIST_RELEASE})`,
+    );
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// OneHandFistGate — deteksi tepat 1 tangan mengepal (tangan lain open)
+// ──────────────────────────────────────────────────────────────────────
+
+export class OneHandFistGate {
+  private armed = true;
+  private lastLogMs = 0;
+
+  /**
+   * Cek apakah tepat 1 tangan mengepal. Return true bila harus advance
+   * (1 fist terdeteksi dan gate sudah di-release).
+   */
+  update(h1: { thumbTip: Pt2; indexTip: Pt2; middleTip: Pt2; palmCenter: Pt2; handSize: number; landmarks: Pt2[] },
+         h2: { thumbTip: Pt2; indexTip: Pt2; middleTip: Pt2; palmCenter: Pt2; handSize: number; landmarks: Pt2[] }): boolean {
+    const s1 = fistScore(h1);
+    const s2 = fistScore(h2);
+
+    this.log(s1, s2);
+
+    const oneFist = (s1 < TWO_HAND_FIST_THRESHOLD && s2 > TWO_HAND_FIST_RELEASE)
+                 || (s2 < TWO_HAND_FIST_THRESHOLD && s1 > TWO_HAND_FIST_RELEASE);
+    const bothReleased = s1 > TWO_HAND_FIST_RELEASE && s2 > TWO_HAND_FIST_RELEASE;
+
+    let advance = false;
+    if (oneFist) {
+      if (this.armed) {
+        advance = true;
+        this.armed = false;
+      }
+    } else if (bothReleased) {
+      this.armed = true;
+    }
+
+    return advance;
+  }
+
+  private log(s1: number, s2: number): void {
+    const now = performance.now();
+    if (now - this.lastLogMs < FIST_LOG_INTERVAL_MS) return;
+    this.lastLogMs = now;
+    console.log(
+      `[oneFist] s1=${s1.toFixed(3)} s2=${s2.toFixed(3)} (threshold=${TWO_HAND_FIST_THRESHOLD} release=${TWO_HAND_FIST_RELEASE})`,
+    );
+  }
+}

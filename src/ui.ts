@@ -38,6 +38,8 @@ export interface UIElements {
   textEl: HTMLInputElement;
   startBtn: HTMLElement;
   recordBtn: HTMLElement;
+  processingEl: HTMLElement;
+  processingPctEl: HTMLElement;
   carouselRowEl: HTMLElement;
   carouselListEl: HTMLElement;
   carouselInputEl: HTMLInputElement;
@@ -106,6 +108,14 @@ export function buildUI(opts: {
           <span class="ui-start-dot"></span>
           Start Camera
         </button>
+      </div>
+
+      <div id="ui-processing" class="ui-processing" hidden>
+        <div class="ui-processing-card">
+          <div class="ui-processing-spinner"></div>
+          <div class="ui-processing-text">Processing video…</div>
+          <div id="ui-processing-pct" class="ui-processing-pct"></div>
+        </div>
       </div>
 
       <footer class="ui-controls">
@@ -203,6 +213,8 @@ export function buildUI(opts: {
   const textColorEl = parent.querySelector<HTMLInputElement>("#ui-text-color")!;
   const startBtn = parent.querySelector<HTMLElement>("#ui-start")!;
   const recordBtn = parent.querySelector<HTMLElement>("#ui-record")!;
+  const processingEl = parent.querySelector<HTMLElement>("#ui-processing")!;
+  const processingPctEl = parent.querySelector<HTMLElement>("#ui-processing-pct")!;
   const carouselRowEl = parent.querySelector<HTMLElement>("#ui-carousel-row")!;
   const carouselListEl = parent.querySelector<HTMLElement>("#ui-carousel-list")!;
   const carouselInputEl = parent.querySelector<HTMLInputElement>("#ui-carousel-input")!;
@@ -283,7 +295,7 @@ export function buildUI(opts: {
 
   effectsEl.querySelectorAll<HTMLSelectElement>(".ui-effect-select").forEach((sel) => {
     sel.addEventListener("change", () => {
-      updateTextRowVisibility();
+      syncEffectRows(effectsEl);
       onEffectsChange(readEffectsState(effectsEl));
     });
   });
@@ -315,14 +327,7 @@ export function buildUI(opts: {
   });
 
   function updateTextRowVisibility(): void {
-    const s1 = effectsEl.querySelector<HTMLSelectElement>('[data-effect="thumbIndex"]')?.value as FrameEffect;
-    const s2 = effectsEl.querySelector<HTMLSelectElement>('[data-effect="indexMiddle"]')?.value as FrameEffect;
-    textRowEl.hidden = !(s1 === "text" || s2 === "text");
-    imageRowEl.hidden = !(s1 === "image" || s2 === "image");
-    textColorRowEl.hidden = !(s1 === "text" || s2 === "text" || s1 === "carousel" || s2 === "carousel");
-    carouselRowEl.hidden = !(s1 === "carousel" || s2 === "carousel");
-    cycleRowEl.hidden = !(s1 === "cycle" || s2 === "cycle");
-    imageCarouselRowEl.hidden = !(s1 === "image-carousel" || s2 === "image-carousel");
+    syncEffectRows(effectsEl);
   }
 
   return {
@@ -334,6 +339,8 @@ export function buildUI(opts: {
     textEl,
     startBtn,
     recordBtn,
+    processingEl,
+    processingPctEl,
     carouselRowEl,
     carouselListEl,
     carouselInputEl,
@@ -363,6 +370,33 @@ export function setRecording(ui: UIElements, recording: boolean): void {
   ui.recordBtn.classList.toggle("recording", recording);
   const label = ui.recordBtn.querySelector<HTMLElement>(".ui-record-label");
   if (label) label.textContent = recording ? "Stop" : "Record";
+}
+
+export function setProcessing(ui: UIElements, processing: boolean, progress?: number, loading?: boolean): void {
+  ui.processingEl.hidden = !processing;
+  if (processing) {
+    const label = ui.recordBtn.querySelector<HTMLElement>(".ui-record-label");
+    if (label) label.textContent = "Stop";
+    ui.recordBtn.classList.add("recording");
+    const textEl = ui.processingEl.querySelector<HTMLElement>(".ui-processing-text");
+    if (textEl) {
+      textEl.textContent = loading ? "Downloading video processor…" : "Processing video…";
+    }
+    if (progress !== undefined) {
+      ui.processingPctEl.textContent = `${progress}%`;
+    } else {
+      ui.processingPctEl.textContent = "";
+    }
+  } else {
+    const label = ui.recordBtn.querySelector<HTMLElement>(".ui-record-label");
+    if (label) label.textContent = "Record";
+    ui.recordBtn.classList.remove("recording");
+    ui.processingPctEl.textContent = "";
+  }
+}
+
+export function setRecordDisabled(ui: UIElements, disabled: boolean): void {
+  (ui.recordBtn as HTMLButtonElement).disabled = disabled;
 }
 
 export function renderCarouselList(ui: UIElements, items: string[], activeIndex: number): void {
@@ -440,6 +474,33 @@ function escapeHtml(s: string): string {
 export function setFramesVisible(ui: UIElements, visible: boolean): void {
   ui.framesEl.hidden = !visible;
   ui.effectsEl.hidden = !visible;
+}
+
+export function setEffectsUI(ui: UIElements, state: FrameEffects): void {
+  const ti = ui.effectsEl.querySelector<HTMLSelectElement>('[data-effect="thumbIndex"]');
+  const im = ui.effectsEl.querySelector<HTMLSelectElement>('[data-effect="indexMiddle"]');
+  if (ti) ti.value = state.thumbIndex;
+  if (im) im.value = state.indexMiddle;
+  syncEffectRows(ui.effectsEl);
+}
+
+function syncEffectRows(effectsEl: HTMLElement): void {
+  const s1 = effectsEl.querySelector<HTMLSelectElement>('[data-effect="thumbIndex"]')?.value as FrameEffect;
+  const s2 = effectsEl.querySelector<HTMLSelectElement>('[data-effect="indexMiddle"]')?.value as FrameEffect;
+
+  const textRowEl = effectsEl.querySelector<HTMLElement>("#ui-text-row");
+  const imageRowEl = effectsEl.querySelector<HTMLElement>("#ui-image-row");
+  const textColorRowEl = effectsEl.querySelector<HTMLElement>("#ui-text-color-row");
+  const carouselRowEl = effectsEl.querySelector<HTMLElement>("#ui-carousel-row");
+  const cycleRowEl = effectsEl.querySelector<HTMLElement>("#ui-cycle-row");
+  const imageCarouselRowEl = effectsEl.querySelector<HTMLElement>("#ui-image-carousel-row");
+
+  if (textRowEl) textRowEl.hidden = !(s1 === "text" || s2 === "text");
+  if (imageRowEl) imageRowEl.hidden = !(s1 === "image" || s2 === "image");
+  if (textColorRowEl) textColorRowEl.hidden = !(s1 === "text" || s2 === "text" || s1 === "carousel" || s2 === "carousel");
+  if (carouselRowEl) carouselRowEl.hidden = !(s1 === "carousel" || s2 === "carousel");
+  if (cycleRowEl) cycleRowEl.hidden = !(s1 === "cycle" || s2 === "cycle");
+  if (imageCarouselRowEl) imageCarouselRowEl.hidden = !(s1 === "image-carousel" || s2 === "image-carousel");
 }
 
 export function hideStart(ui: UIElements): void {
