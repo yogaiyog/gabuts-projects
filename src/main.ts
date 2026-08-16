@@ -49,7 +49,7 @@ async function bootstrap() {
 
   // ──────── Teks carousel + effect cycle + image carousel + pinch (two-hand) ────────
   const carousel = new TextCarousel(["kepal untuk next effect", "tempel jari kiri dan kanan ganti teks", "jan lupa follow ya"]);
-  const cycle = new EffectCycle(["pixelate", "sobel-x", "invert", "blur"]);
+  const cycle = new EffectCycle(["pixelate", "invert", "rainbow", "halftone","duotone", "neon-glow"]);
   const imageCarousel = new ImageCarousel([]);
   const oneFistGate = new OneHandFistGate();
   let twoFistDebounce = false; // prevent 1-fist clear right after 2-fist release

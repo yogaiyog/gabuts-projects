@@ -164,16 +164,12 @@ const BLUR_FRAG = /* glsl */ `
   void main() {
     vec2 px = 1.0 / uTexSize;
     vec3 sum = vec3(0.0);
-    sum += texture2D(uTex, vSampleUv + vec2(-px.x,  px.y)).rgb;
-    sum += texture2D(uTex, vSampleUv + vec2(   0.0, px.y)).rgb;
-    sum += texture2D(uTex, vSampleUv + vec2( px.x,  px.y)).rgb;
-    sum += texture2D(uTex, vSampleUv + vec2(-px.x,   0.0)).rgb;
-    sum += texture2D(uTex, vSampleUv).rgb;
-    sum += texture2D(uTex, vSampleUv + vec2( px.x,   0.0)).rgb;
-    sum += texture2D(uTex, vSampleUv + vec2(-px.x, -px.y)).rgb;
-    sum += texture2D(uTex, vSampleUv + vec2(   0.0,-px.y)).rgb;
-    sum += texture2D(uTex, vSampleUv + vec2( px.x, -px.y)).rgb;
-    vec3 c = mix(sum / 9.0, uTintColor, uTintAlpha);
+    for (int y = -6; y <= 6; y++) {
+      for (int x = -6; x <= 6; x++) {
+        sum += texture2D(uTex, vSampleUv + vec2(float(x), float(y)) * px).rgb;
+      }
+    }
+    vec3 c = mix(sum / 169.0, uTintColor, uTintAlpha);
     gl_FragColor = vec4(c, 1.0);
   }
 `;
@@ -230,7 +226,7 @@ const THRESHOLD_FRAG = /* glsl */ `
   void main() {
     vec3 c = texture2D(uTex, vSampleUv).rgb;
     float l = dot(c, vec3(0.299, 0.587, 0.114));
-    float t = step(0.5, l);
+    float t = step(0.3, l);
     vec3 col = mix(vec3(t), uTintColor, uTintAlpha);
     gl_FragColor = vec4(col, 1.0);
   }
@@ -277,6 +273,189 @@ const SHARPEN_FRAG = /* glsl */ `
       - texture2D(uTex, vSampleUv + vec2(   0.0,  px.y)).rgb
       - texture2D(uTex, vSampleUv + vec2(   0.0, -px.y)).rgb;
     c = mix(clamp(sharp, 0.0, 1.0), uTintColor, uTintAlpha);
+    gl_FragColor = vec4(c, 1.0);
+  }
+`;
+
+// "RGB Split / Glitch": offset channel R/G/B (px, digerakkan oleh uTime
+// supaya intensitasnya "berdenyut") — efek chromatic aberration ala VHS/glitch.
+const RGB_SPLIT_FRAG = /* glsl */ `
+  precision highp float;
+  varying vec2 vSampleUv;
+  uniform sampler2D uTex;
+  uniform vec2 uTexSize;
+  uniform float uTime;
+  uniform vec3 uTintColor;
+  uniform float uTintAlpha;
+
+  void main() {
+    float pulse = 0.5 + 0.5 * sin(uTime * 4.0);
+    vec2 offset = vec2(6.0, 0.0) / uTexSize * (0.5 + pulse);
+    float r = texture2D(uTex, vSampleUv + offset).r;
+    float g = texture2D(uTex, vSampleUv).g;
+    float b = texture2D(uTex, vSampleUv - offset).b;
+    vec3 c = vec3(r, g, b);
+    c = mix(c, uTintColor, uTintAlpha);
+    gl_FragColor = vec4(c, 1.0);
+  }
+`;
+
+// "Rainbow Wave": luminance webcam di-remap ke warna HSV yang hue-nya
+// bergeser terus mengikuti uTime — hasilnya gelombang warna pelangi
+// yang tetap mengikuti bentuk gambar aslinya.
+const RAINBOW_FRAG = /* glsl */ `
+  precision highp float;
+  varying vec2 vSampleUv;
+  uniform sampler2D uTex;
+  uniform float uTime;
+  uniform vec3 uTintColor;
+  uniform float uTintAlpha;
+
+  vec3 hsv2rgb(vec3 c) {
+    vec4 k = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + k.xyz) * 6.0 - k.www);
+    return c.z * mix(k.xxx, clamp(p - k.xxx, 0.0, 1.0), c.y);
+  }
+
+  void main() {
+    vec3 tex = texture2D(uTex, vSampleUv).rgb;
+    float l = dot(tex, vec3(0.299, 0.587, 0.114));
+    float hue = fract(l + uTime * 0.15);
+    vec3 rainbow = hsv2rgb(vec3(hue, 1.0, 1.0));
+    vec3 c = rainbow * (0.4 + 0.6 * l);
+    c = mix(c, uTintColor, uTintAlpha);
+    gl_FragColor = vec4(c, 1.0);
+  }
+`;
+
+// "Duotone": remap luminance ke 2 warna (gelap→terang), default cyberpunk
+// ungu-cyan. Warna bisa diganti via setDuotoneColors().
+const DUOTONE_FRAG = /* glsl */ `
+  precision highp float;
+  varying vec2 vSampleUv;
+  uniform sampler2D uTex;
+  uniform vec3 uDuotoneColorA;
+  uniform vec3 uDuotoneColorB;
+  uniform vec3 uTintColor;
+  uniform float uTintAlpha;
+
+  void main() {
+    vec3 tex = texture2D(uTex, vSampleUv).rgb;
+    float l = dot(tex, vec3(0.299, 0.587, 0.114));
+    vec3 c = mix(uDuotoneColorA, uDuotoneColorB, l);
+    c = mix(c, uTintColor, uTintAlpha);
+    gl_FragColor = vec4(c, 1.0);
+  }
+`;
+
+// "Neon Glow": edge-detect (gradient magnitude), garis pinggir diwarnai
+// hue pelangi yang bergerak (uTime), background gelap → kesan neon glow.
+const NEON_GLOW_FRAG = /* glsl */ `
+  precision highp float;
+  varying vec2 vSampleUv;
+  uniform sampler2D uTex;
+  uniform vec2 uTexSize;
+  uniform float uTime;
+  uniform vec3 uTintColor;
+  uniform float uTintAlpha;
+
+  float gray(vec2 uv) {
+    return dot(texture2D(uTex, uv).rgb, vec3(0.299, 0.587, 0.114));
+  }
+
+  vec3 hsv2rgb(vec3 c) {
+    vec4 k = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + k.xyz) * 6.0 - k.www);
+    return c.z * mix(k.xxx, clamp(p - k.xxx, 0.0, 1.0), c.y);
+  }
+
+  void main() {
+    vec2 px = 1.0 / uTexSize;
+    float gx = gray(vSampleUv + vec2(px.x, 0.0)) - gray(vSampleUv - vec2(px.x, 0.0));
+    float gy = gray(vSampleUv + vec2(0.0, px.y)) - gray(vSampleUv - vec2(0.0, px.y));
+    float edge = clamp(length(vec2(gx, gy)) * 6.0, 0.0, 1.0);
+    float hue = fract(uTime * 0.1 + vSampleUv.x * 0.5 + vSampleUv.y * 0.5);
+    vec3 neon = hsv2rgb(vec3(hue, 1.0, 1.0));
+    vec3 c = neon * edge;
+    c = mix(c, uTintColor, uTintAlpha);
+    gl_FragColor = vec4(c, 1.0);
+  }
+`;
+
+// "Thermal / False Color": remap luminance webcam ke gradient warna kamera
+// termal (biru dingin → cyan → hijau → kuning → merah panas).
+const THERMAL_FRAG = /* glsl */ `
+  precision highp float;
+  varying vec2 vSampleUv;
+  uniform sampler2D uTex;
+  uniform vec3 uTintColor;
+  uniform float uTintAlpha;
+
+  vec3 thermalPalette(float t) {
+    t = clamp(t, 0.0, 1.0);
+    vec3 c1 = vec3(0.0, 0.0, 0.6);
+    vec3 c2 = vec3(0.0, 0.9, 0.9);
+    vec3 c3 = vec3(0.1, 0.9, 0.1);
+    vec3 c4 = vec3(1.0, 1.0, 0.0);
+    vec3 c5 = vec3(1.0, 0.0, 0.0);
+
+    if (t < 0.25) return mix(c1, c2, t / 0.25);
+    if (t < 0.5)  return mix(c2, c3, (t - 0.25) / 0.25);
+    if (t < 0.75) return mix(c3, c4, (t - 0.5) / 0.25);
+    return mix(c4, c5, (t - 0.75) / 0.25);
+  }
+
+  void main() {
+    vec3 tex = texture2D(uTex, vSampleUv).rgb;
+    float l = dot(tex, vec3(0.299, 0.587, 0.114));
+    vec3 c = thermalPalette(l);
+    c = mix(c, uTintColor, uTintAlpha);
+    gl_FragColor = vec4(c, 1.0);
+  }
+`;
+
+// "Halftone / Comic Dots": separasi CMYK jadi pola dot dengan sudut rotasi
+// berbeda (C=15°, M=75°, Y=0°, K=45°), ukuran dot ∝ intensitas ink, di atas
+// background putih. Ukuran cell diatur via uHalftoneScale (setHalftoneScale).
+const HALFTONE_FRAG = /* glsl */ `
+  precision highp float;
+  varying vec2 vSampleUv;
+  uniform sampler2D uTex;
+  uniform vec2 uTexSize;
+  uniform float uHalftoneScale;
+  uniform vec3 uTintColor;
+  uniform float uTintAlpha;
+
+  float dotPattern(vec2 uv, float angleDeg, float value) {
+    float angle = radians(angleDeg);
+    mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+    vec2 pxUv = uv * uTexSize;
+    vec2 p = rot * pxUv / uHalftoneScale;
+    vec2 cellCenter = floor(p) + 0.5;
+    float dist = length(p - cellCenter);
+    float radius = sqrt(clamp(value, 0.0, 1.0)) * 0.6;
+    return 1.0 - smoothstep(radius - 0.08, radius + 0.08, dist);
+  }
+
+  void main() {
+    vec3 rgb = texture2D(uTex, vSampleUv).rgb;
+    vec3 cmy = 1.0 - rgb;
+    float k = min(cmy.r, min(cmy.g, cmy.b));
+    vec3 ink = (1.0 - k > 0.0001) ? (cmy - k) / (1.0 - k) : vec3(0.0);
+
+    float cDot = dotPattern(vSampleUv, 15.0, ink.r);
+    float mDot = dotPattern(vSampleUv, 75.0, ink.g);
+    float yDot = dotPattern(vSampleUv, 0.0, ink.b);
+    float kDot = dotPattern(vSampleUv, 45.0, k);
+
+    vec3 c = vec3(1.0);
+    c -= cDot * vec3(0.0, 1.0, 1.0) * 0.9;
+    c -= mDot * vec3(1.0, 0.0, 1.0) * 0.9;
+    c -= yDot * vec3(1.0, 1.0, 0.0) * 0.9;
+    c -= kDot * vec3(1.0, 1.0, 1.0) * 0.9;
+    c = clamp(c, 0.0, 1.0);
+
+    c = mix(c, uTintColor, uTintAlpha);
     gl_FragColor = vec4(c, 1.0);
   }
 `;
@@ -417,7 +596,9 @@ const EDGE_FRAG = /* glsl */ `
 export type EffectKind =
   | "pixelate" | "sobel-x" | "invert" | "grayscale" | "blur"
   | "emboss" | "posterize" | "threshold" | "sepia" | "sharpen" | "text"
-  | "bendera" | "image" | "carousel" | "image-carousel";
+  | "bendera" | "image" | "carousel" | "image-carousel"
+  | "rgb-split" | "rainbow" | "duotone" | "neon-glow"
+  | "thermal" | "halftone";
 
 /** Efek yang bisa dipilih di dropdown frame — EffectKind + meta "cycle". */
 export type FrameEffect = EffectKind | "cycle";
@@ -438,6 +619,12 @@ export const EFFECTS: EffectDef[] = [
   { id: "threshold", label: "Threshold" },
   { id: "sepia", label: "Sepia" },
   { id: "sharpen", label: "Sharpen" },
+  { id: "rgb-split", label: "RGB Split" },
+  { id: "rainbow", label: "Rainbow Wave" },
+  { id: "duotone", label: "Duotone" },
+  { id: "neon-glow", label: "Neon Glow" },
+  { id: "thermal", label: "Thermal" },
+  { id: "halftone", label: "Halftone" },
   { id: "text", label: "Text" },
   { id: "bendera", label: "Bendera" },
   { id: "image", label: "Image" },
@@ -468,6 +655,12 @@ const EFFECT_FRAG: Record<EffectKind, string> = {
   "threshold": THRESHOLD_FRAG,
   "sepia": SEPIA_FRAG,
   "sharpen": SHARPEN_FRAG,
+  "rgb-split": RGB_SPLIT_FRAG,
+  "rainbow": RAINBOW_FRAG,
+  "duotone": DUOTONE_FRAG,
+  "neon-glow": NEON_GLOW_FRAG,
+  "thermal": THERMAL_FRAG,
+  "halftone": HALFTONE_FRAG,
   "text": TEXT_FRAG,
   "bendera": BENDERA_FRAG,
   "image": IMAGE_FRAG,
@@ -508,6 +701,10 @@ export class EffectQuad {
   private uImageCarouselTex: { value: THREE.Texture };
   private uTintColor: { value: THREE.Color };
   private uTintAlpha: { value: number };
+  private uTime: { value: number };
+  private uDuotoneColorA: { value: THREE.Color };
+  private uDuotoneColorB: { value: THREE.Color };
+  private uHalftoneScale: { value: number };
   private currentEffect: EffectKind;
   private visible = true;
 
@@ -533,6 +730,11 @@ export class EffectQuad {
     this.uImageCarouselTex = { value: makeTransparentTexture() };
     this.uTintColor = { value: new THREE.Color(0xffffff) };
     this.uTintAlpha = { value: 0.0 };
+    this.uTime = { value: 0.0 };
+    // Default duotone: cyberpunk ungu-gelap → cyan terang.
+    this.uDuotoneColorA = { value: new THREE.Color(0x120024) };
+    this.uDuotoneColorB = { value: new THREE.Color(0x00fff0) };
+    this.uHalftoneScale = { value: 10.0 };
     this.currentEffect = opts.effect;
 
     this.material = this.buildMaterial(opts.effect);
@@ -568,6 +770,10 @@ export class EffectQuad {
         uImageCarouselTex: this.uImageCarouselTex,
         uTintColor: this.uTintColor,
         uTintAlpha: this.uTintAlpha,
+        uTime: this.uTime,
+        uDuotoneColorA: this.uDuotoneColorA,
+        uDuotoneColorB: this.uDuotoneColorB,
+        uHalftoneScale: this.uHalftoneScale,
       },
       transparent: effect === "text" || effect === "image" || effect === "carousel" || effect === "image-carousel",
       depthTest: false,
@@ -627,6 +833,26 @@ export class EffectQuad {
   /** Clear tint (reset ke transparan). */
   clearTint(): void {
     this.uTintAlpha.value = 0.0;
+  }
+
+  /**
+   * Update jam animasi (detik), dipakai oleh effect "rgb-split" (pulse
+   * offset), "rainbow" (hue shift), dan "neon-glow" (hue shift garis).
+   * Panggil tiap frame di render loop, misal: quad.setTime(clock.getElapsedTime()).
+   */
+  setTime(seconds: number): void {
+    this.uTime.value = seconds;
+  }
+
+  /** Set 2 warna duotone (hex 0xRRGGBB): A = area gelap, B = area terang. */
+  setDuotoneColors(colorA: number, colorB: number): void {
+    this.uDuotoneColorA.value.setHex(colorA);
+    this.uDuotoneColorB.value.setHex(colorB);
+  }
+
+  /** Atur ukuran cell dot halftone (px), makin besar = dot makin besar/renggang. */
+  setHalftoneScale(px: number): void {
+    this.uHalftoneScale.value = Math.max(2.0, px);
   }
 
   /** Posisi quad di layar (world coords), ikut jari. */
