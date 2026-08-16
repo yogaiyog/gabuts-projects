@@ -77,6 +77,9 @@ export class Compositor {
   private aspect = 1;
   private mode: RenderMode = "hybrid";
   private texSize = { width: 1280, height: 720 };
+  private cssWidth = 1;
+  private cssHeight = 1;
+  private maxBufferWidth: number | null = null;
 
   // lifecycle
   private rafId: number | null = null;
@@ -211,7 +214,7 @@ export class Compositor {
       img.onload = () => {
         const tex = new THREE.Texture(img);
         tex.needsUpdate = true;
-        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.colorSpace = THREE.NoColorSpace;
         tex.minFilter = THREE.LinearFilter;
         tex.magFilter = THREE.LinearFilter;
         resolve({ texture: tex, url });
@@ -238,7 +241,7 @@ export class Compositor {
   loadImageFromUrl(url: string): void {
     const loader = new THREE.TextureLoader();
     loader.load(url, (tex) => {
-      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.colorSpace = THREE.NoColorSpace;
       tex.minFilter = THREE.LinearFilter;
       tex.magFilter = THREE.LinearFilter;
       this.setImage(tex);
@@ -252,7 +255,7 @@ export class Compositor {
     img.onload = () => {
       const tex = new THREE.Texture(img);
       tex.needsUpdate = true;
-      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.colorSpace = THREE.NoColorSpace;
       tex.minFilter = THREE.LinearFilter;
       tex.magFilter = THREE.LinearFilter;
       this.setImage(tex);
@@ -268,9 +271,9 @@ export class Compositor {
   }
 
   resize(width: number, height: number): void {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.renderer.setPixelRatio(dpr);
-    this.renderer.setSize(width, height, false);
+    this.cssWidth = width;
+    this.cssHeight = height;
+    this.applySize();
     this.aspect = width / height;
     this.camera.left = -this.aspect;
     this.camera.right = this.aspect;
@@ -279,6 +282,27 @@ export class Compositor {
     this.camera.updateProjectionMatrix();
     // Stretch unit BG plane (2×2) ke camera bounds (2*aspect × 2)
     this.bgMesh.scale.set(this.aspect, 1, 1);
+  }
+
+  /**
+   * Batasi lebar drawing buffer (px) saat rekaman. null = kembalikan ke
+   * resolusi normal (devicePixelRatio sampai 2×). Dipakai supaya
+   * canvas.captureStream() tidak merekam di resolusi 2× window yang
+   * bikin FFmpeg.wasm transcode jadi sangat lambat.
+   */
+  setMaxBufferWidth(px: number | null): void {
+    this.maxBufferWidth = px;
+    this.applySize();
+  }
+
+  private applySize(): void {
+    const nativeDpr = Math.min(window.devicePixelRatio || 1, 2);
+    let dpr = nativeDpr;
+    if (this.maxBufferWidth !== null && this.cssWidth > 0) {
+      dpr = Math.min(nativeDpr, this.maxBufferWidth / this.cssWidth);
+    }
+    this.renderer.setPixelRatio(dpr);
+    this.renderer.setSize(this.cssWidth, this.cssHeight, false);
   }
 
   /**

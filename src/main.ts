@@ -18,7 +18,7 @@ import { Camera } from "./camera.js";
 import { HandTracker } from "./handTracker.js";
 import { Compositor } from "./compositor.js";
 import { generateARPatternTexture } from "./arPattern.js";
-import { buildUI, setStatus, showModes, hideStart, setFramesVisible, showRecord, setRecording, setProcessing, setRecordDisabled, renderCarouselList, renderCycleList, renderImageCarouselList, setEffectsUI, type UIMode, type FrameState, type FrameEffects, type ImageCarouselItemUI } from "./ui.js";
+import { buildUI, setStatus, showModes, hideStart, setFramesVisible, showRecord, setRecording, setProcessing, setRecordDisabled, chooseVideoFormat, renderCarouselList, renderCycleList, renderImageCarouselList, setEffectsUI, type UIMode, type FrameState, type FrameEffects, type ImageCarouselItemUI } from "./ui.js";
 import { CanvasRecorder, downloadBlob, warmupFFmpeg } from "./recorder.js";
 import { TextCarousel, EffectCycle, ImageCarousel, OneHandFistGate, fistScore } from "./carousel.js";
 import type { EffectKind } from "./effects.js";
@@ -125,24 +125,30 @@ async function bootstrap() {
       if (recorder.isProcessing) return;
       if (recorder.isRecording) {
         setRecording(ui, false);
-        setStatus(ui, "Processing video…", "loading");
-        setProcessing(ui, true);
         setRecordDisabled(ui, true);
         try {
-          const blob = await recorder.stop();
-          setProcessing(ui, false);
-          setRecordDisabled(ui, false);
-          setStatus(ui, "Video ready ✓", "ok");
-          setRecording(ui, false);
-          downloadBlob(blob, `recording-${Date.now()}.mp4`);
+          const webmBlob = await recorder.stop();
+          const format = await chooseVideoFormat(ui);
+          if (format === "webm") {
+            setStatus(ui, "Video ready ✓", "ok");
+            downloadBlob(webmBlob, `recording-${Date.now()}.webm`);
+          } else {
+            const mp4Blob = await recorder.transcode(webmBlob);
+            setStatus(ui, "Video ready ✓", "ok");
+            downloadBlob(mp4Blob, `recording-${Date.now()}.mp4`);
+          }
         } catch (err) {
           setProcessing(ui, false);
-          setRecordDisabled(ui, false);
           const msg = err instanceof Error ? err.message : String(err);
           setStatus(ui, `Processing failed: ${msg}`, "err");
+        } finally {
+          setProcessing(ui, false);
+          setRecordDisabled(ui, false);
           setRecording(ui, false);
+          compositor.setMaxBufferWidth(null);
         }
       } else {
+        compositor.setMaxBufferWidth(1280);
         recorder.start(canvas, 30);
         setRecording(ui, true);
       }

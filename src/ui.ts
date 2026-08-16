@@ -40,6 +40,7 @@ export interface UIElements {
   recordBtn: HTMLElement;
   processingEl: HTMLElement;
   processingPctEl: HTMLElement;
+  formatModalEl: HTMLElement;
   carouselRowEl: HTMLElement;
   carouselListEl: HTMLElement;
   carouselInputEl: HTMLInputElement;
@@ -115,6 +116,20 @@ export function buildUI(opts: {
           <div class="ui-processing-spinner"></div>
           <div class="ui-processing-text">Processing video…</div>
           <div id="ui-processing-pct" class="ui-processing-pct"></div>
+        </div>
+      </div>
+
+      <div id="ui-format-modal" class="ui-format-modal" hidden>
+        <div class="ui-format-card">
+          <div class="ui-format-title">Save video as</div>
+          <button data-format="webm" class="ui-format-btn ui-format-btn--webm">
+            <span class="ui-format-label">WebM</span>
+            <span class="ui-format-hint">Instant — no processing</span>
+          </button>
+          <button data-format="mp4" class="ui-format-btn ui-format-btn--mp4">
+            <span class="ui-format-label">MP4</span>
+            <span class="ui-format-hint">H.264 — slower (FFmpeg)</span>
+          </button>
         </div>
       </div>
 
@@ -215,6 +230,7 @@ export function buildUI(opts: {
   const recordBtn = parent.querySelector<HTMLElement>("#ui-record")!;
   const processingEl = parent.querySelector<HTMLElement>("#ui-processing")!;
   const processingPctEl = parent.querySelector<HTMLElement>("#ui-processing-pct")!;
+  const formatModalEl = parent.querySelector<HTMLElement>("#ui-format-modal")!;
   const carouselRowEl = parent.querySelector<HTMLElement>("#ui-carousel-row")!;
   const carouselListEl = parent.querySelector<HTMLElement>("#ui-carousel-list")!;
   const carouselInputEl = parent.querySelector<HTMLInputElement>("#ui-carousel-input")!;
@@ -341,6 +357,7 @@ export function buildUI(opts: {
     recordBtn,
     processingEl,
     processingPctEl,
+    formatModalEl,
     carouselRowEl,
     carouselListEl,
     carouselInputEl,
@@ -397,6 +414,23 @@ export function setProcessing(ui: UIElements, processing: boolean, progress?: nu
 
 export function setRecordDisabled(ui: UIElements, disabled: boolean): void {
   (ui.recordBtn as HTMLButtonElement).disabled = disabled;
+}
+
+export function chooseVideoFormat(ui: UIElements): Promise<"mp4" | "webm"> {
+  return new Promise((resolve) => {
+    const modal = ui.formatModalEl;
+    const btns = modal.querySelectorAll<HTMLButtonElement>("[data-format]");
+
+    const onClick = (e: Event) => {
+      const format = (e.currentTarget as HTMLButtonElement).dataset.format as "mp4" | "webm";
+      btns.forEach((b) => b.removeEventListener("click", onClick));
+      modal.hidden = true;
+      resolve(format);
+    };
+
+    btns.forEach((b) => b.addEventListener("click", onClick));
+    modal.hidden = false;
+  });
 }
 
 export function renderCarouselList(ui: UIElements, items: string[], activeIndex: number): void {

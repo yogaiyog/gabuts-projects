@@ -163,6 +163,7 @@ export class CanvasRecorder {
     this.setStatus("recording");
   }
 
+  /** Stop recording and return the raw WebM blob (no FFmpeg). Fast. */
   async stop(): Promise<Blob> {
     if (!this.recorder) {
       throw new Error("Not recording");
@@ -178,10 +179,16 @@ export class CanvasRecorder {
       rec.stop();
     });
 
+    this.setStatus("completed");
+    return webmBlob;
+  }
+
+  /** Transcode WebM blob → H.264 MP4 via FFmpeg.wasm. Slow (wasm x264). */
+  async transcode(webmBlob: Blob): Promise<Blob> {
     this.setStatus("processing");
 
     try {
-      const mp4Blob = await this.transcode(webmBlob);
+      const mp4Blob = await this.runTranscode(webmBlob);
       this.setStatus("completed");
       return mp4Blob;
     } catch (err) {
@@ -190,7 +197,7 @@ export class CanvasRecorder {
     }
   }
 
-  private async transcode(webmBlob: Blob): Promise<Blob> {
+  private async runTranscode(webmBlob: Blob): Promise<Blob> {
     // Pre-warm or reuse existing instance
     const ffmpeg = await getFFmpegInstance((s) => this.setStatus(s));
 
@@ -218,13 +225,17 @@ export class CanvasRecorder {
     const webmData = new Uint8Array(await webmBlob.arrayBuffer());
     await ffmpeg.writeFile(inputName, webmData);
 
-    // Transcode: WebM (VP8) → H.264 MP4 (yuv420p, ultrafast preset)
+    // Transcode: WebM (VP8) → H.264 MP4 (yuv420p, ultrafast preset).
+    // `fps=30` memaksa constant frame rate (input MediaRecorder adalah VFR),
+    // `+genpts` regenerate timestamp bersih — tanpa ini MP4 jadi slow-motion/stutter.
     await ffmpeg.exec([
+      "-fflags", "+genpts",
       "-i", inputName,
       "-c:v", "libx264",
       "-preset", "ultrafast",
+      "-crf", "28",
       "-pix_fmt", "yuv420p",
-      "-movflags", "+faststart",
+      "-vf", "fps=30,scale=1280:-2",
       outputName,
     ]);
 
